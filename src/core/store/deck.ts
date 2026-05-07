@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
+import { useShallow } from 'zustand/shallow';
 import { enablePatches, produceWithPatches, applyPatches, type Patch as ImmerPatch } from 'immer';
 import type { Block, Deck, ID, Selection, Slide, ThemeSpec } from '../schema/types';
 import { createDeck, createSlide, newId } from '../schema/factory';
@@ -323,10 +324,12 @@ export function useActiveSlide(): Slide | null {
 }
 
 export function useSelectedBlocks(): Block[] {
-  return useDeckStore((s) => {
-    const slide = s.deck.slides.find((x) => x.id === s.selection.slideId);
-    if (!slide) return [];
-    const ids = new Set(s.selection.blockIds);
-    return slide.blocks.filter((b) => ids.has(b.id));
-  });
+  return useDeckStore(
+    useShallow((s) => {
+      const slide = s.deck.slides.find((x) => x.id === s.selection.slideId);
+      if (!slide) return [] as Block[];
+      const ids = new Set(s.selection.blockIds);
+      return slide.blocks.filter((b) => ids.has(b.id));
+    }),
+  );
 }
