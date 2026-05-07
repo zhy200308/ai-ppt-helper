@@ -88,9 +88,10 @@ export function Stage() {
     if (presenting) return;
     const el = stageRef.current;
     if (!el) return;
-    let startDeck = { x: 0, y: 0 };
+    let startDeck: { x: number; y: number } | null = null;
     return bindPointerDrag(el, {
       onStart: (e) => {
+        startDeck = null;
         const target = e.target as HTMLElement;
         if (target.dataset.blockHit || target.closest('[data-block-hit]') || target.closest('[data-overlay-handle]')) {
           // Block / handle clicked — handled by their own drag bindings.
@@ -110,6 +111,8 @@ export function Stage() {
         setMarquee({ x, y, w, h });
       },
       onEnd: () => {
+        if (!startDeck) return;
+        startDeck = null;
         if (!marquee || !slide) {
           setMarquee(null);
           return;
@@ -120,7 +123,7 @@ export function Stage() {
         }
         setMarquee(null);
       },
-      onCancel: () => setMarquee(null),
+      onCancel: () => { startDeck = null; setMarquee(null); },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientToDeck, presenting, marquee?.x, marquee?.y, marquee?.w, marquee?.h, slide?.id]);
