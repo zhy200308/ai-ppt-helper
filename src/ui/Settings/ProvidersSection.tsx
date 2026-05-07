@@ -11,6 +11,7 @@ import {
 } from '../../ai/types';
 import type { AIProvider, ProviderConfig, ProviderHealth } from '../../ai/types';
 import { AIService } from '../../ai/service';
+import { useBackdropClose } from '../components/useBackdropClose';
 
 export function ProvidersSection() {
   const providers = useSettingsStore((s) => s.providers);
@@ -286,6 +287,7 @@ function AddRelayDialog({
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState(tpl.model ?? '');
   const [authStyle, setAuthStyle] = useState(tpl.authStyle ?? 'x-api-key');
+  const guard = useBackdropClose(onClose);
 
   const submit = useCallback(() => {
     if (!baseUrl || !apiKey) return;
@@ -306,8 +308,8 @@ function AddRelayDialog({
   }, [kind, baseUrl, apiKey, label, model, authStyle, onAdd, tpl]);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...guard}>
+      <div className="dialog" onPointerDown={(e) => e.stopPropagation()}>
         <header><h3>添加 {tpl.label}</h3></header>
         <div className="dialog-body">
           <p className="hint">{tpl.description}</p>

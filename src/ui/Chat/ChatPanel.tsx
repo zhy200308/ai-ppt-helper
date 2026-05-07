@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Send, Paperclip, Square, X, AtSign, Sparkles } from 'lucide-react';
+import { Send, Paperclip, Square, X, AtSign, Sparkles, Check } from 'lucide-react';
 import { useDeckStore, useSelectedBlocks, useActiveSlide } from '../../core/store/deck';
 import { runChat, type ChatSessionMessage } from '../../ai/orchestrator';
 import { extractFile, type ExtractedFile } from '../../utils/files';
+import { isMac } from '../components/useBackdropClose';
+
+const CONFIRM_TIMEOUT_MS = 3000;
 
 export function ChatPanel({ onClose }: { onClose: () => void }) {
   const [messages, setMessages] = useState<ChatSessionMessage[]>([]);
@@ -15,10 +18,17 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
   const slide = useActiveSlide();
   const selected = useSelectedBlocks();
   const [includeContext, setIncludeContext] = useState(true);
+  const macConfirm = isMac();
+  const [confirmingSend, setConfirmingSend] = useState(false);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => () => {
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+  }, []);
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() && files.length === 0) return;
@@ -89,6 +99,24 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
     abortRef.current = null;
   }, [input, files, busy, messages, slide, selected, includeContext]);
 
+  const triggerSend = useCallback(() => {
+    if (busy) return;
+    if (!input.trim() && files.length === 0) return;
+    if (!macConfirm) {
+      sendMessage();
+      return;
+    }
+    if (confirmingSend) {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      setConfirmingSend(false);
+      sendMessage();
+      return;
+    }
+    setConfirmingSend(true);
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = setTimeout(() => setConfirmingSend(false), CONFIRM_TIMEOUT_MS);
+  }, [busy, input, files.length, macConfirm, confirmingSend, sendMessage]);
+
   const handleFiles = useCallback(async (list: FileList | null) => {
     if (!list) return;
     const out: ExtractedFile[] = [];
@@ -158,20 +186,33 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
         </label>
         <textarea
           rows={2}
-          placeholder="描述你想要的 PPT…  (Cmd/Ctrl+Enter 发送)"
+          placeholder={macConfirm ? '描述你想要的 PPT…  (Cmd+Enter 触发，再次确认发送)' : '描述你想要的 PPT…  (Ctrl+Enter 发送)'}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
               e.preventDefault();
-              sendMessage();
+              triggerSend();
+            } else if (e.key === 'Escape' && confirmingSend) {
+              setConfirmingSend(false);
+              if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
             }
           }}
         />
         {busy ? (
           <button className="icon-btn danger" onClick={cancel} title="停止"><Square size={14}/></button>
+        ) : confirmingSend ? (
+          <button
+            className="icon-btn primary confirm-send"
+            onClick={() => { setConfirmingSend(false); if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current); sendMessage(); }}
+            title="再次点击确认发送 (Esc 取消)"
+          >
+            <Check size={14}/>
+          </button>
         ) : (
-          <button className="icon-btn primary" onClick={sendMessage} title="发送"><Send size={14}/></button>
+          <button className="icon-btn primary" onClick={triggerSend} title={macConfirm ? '点击后再次确认发送' : '发送'}>
+            <Send size={14}/>
+          </button>
         )}
       </div>
     </aside>

@@ -4,6 +4,7 @@ import { useSettingsStore } from '../../core/store/settings';
 import { ProvidersSection } from './ProvidersSection';
 import { ProxySection } from './ProxySection';
 import { ThemesSection } from './ThemesSection';
+import { useBackdropClose } from '../components/useBackdropClose';
 
 interface Props {
   open: boolean;
@@ -26,11 +27,12 @@ export function SettingsPanel({ open, onClose }: Props) {
 
   // Subscribe to ensure the persist middleware is hydrated (no-op render).
   useSettingsStore((s) => s.activeProvider);
+  const guard = useBackdropClose(onClose);
 
   if (!open) return null;
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...guard}>
+      <div className="settings-modal" onPointerDown={(e) => e.stopPropagation()}>
         <header className="settings-header">
           <h2>设置</h2>
           <button className="icon-btn" onClick={onClose}><X size={16}/></button>

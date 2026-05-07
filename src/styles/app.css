@@ -675,6 +675,14 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .chat-input .icon-btn { width: 36px; height: 36px; }
+.chat-input .icon-btn.confirm-send {
+  background: var(--success);
+  animation: pulse-confirm 1.2s ease-in-out infinite;
+}
+@keyframes pulse-confirm {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
 
 /* ============================================================
    Misc
