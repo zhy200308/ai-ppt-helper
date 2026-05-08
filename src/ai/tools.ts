@@ -97,10 +97,88 @@ export const TOOL_SET_THEME: ToolSpec = {
   },
 };
 
+export const TOOL_OUTLINE_DECK: ToolSpec = {
+  name: 'outline_deck',
+  description: 'Plan a deck as a sequence of slide titles + one-line goals (NO body content). Use this as the FIRST step when the user asks for a brand new deck. The orchestrator will then populate each slide.',
+  parameters: {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      theme_hint: { type: 'string' },
+      slides: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            layout: { type: 'string', enum: ['cover', 'agenda', 'two-column', 'image-left', 'kpi', 'quote', 'closing', 'bullet'] },
+            title: { type: 'string' },
+            goal: { type: 'string', description: 'One-line description of what this slide must communicate' },
+          },
+          required: ['layout', 'title', 'goal'],
+        },
+      },
+    },
+    required: ['title', 'slides'],
+  },
+};
+
+export const TOOL_POPULATE_SLIDE: ToolSpec = {
+  name: 'populate_slide',
+  description: 'Fill in the body of a single slide that was previously outlined. Use AFTER outline_deck to produce slide bodies one by one.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      subtitle: { type: 'string' },
+      bullets: { type: 'array', items: { type: 'string' } },
+      body: { type: 'string' },
+      notes: { type: 'string' },
+    },
+    required: ['slide_id'],
+  },
+};
+
+export const TOOL_DERIVE_THEME: ToolSpec = {
+  name: 'derive_theme',
+  description: 'Generate a WCAG-AA compliant palette + heading/body font pair from a single primary color and a vibe description. Saves & applies the theme.',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: { type: 'string' },
+      primary: { type: 'string', description: 'Hex color, e.g. "#4F46E5"' },
+      vibe: { type: 'string', description: 'tone description, e.g. "tech blue", "elegant publishing"' },
+      mode: { type: 'string', enum: ['light', 'dark'], description: 'background mode' },
+    },
+    required: ['name', 'primary'],
+  },
+};
+
+export const TOOL_GENERATE_IMAGE: ToolSpec = {
+  name: 'generate_image',
+  description: 'Generate an illustrative image and place it on the deck. Returns a data URL. Use sparingly for cover slides or featured visuals.',
+  parameters: {
+    type: 'object',
+    properties: {
+      prompt: { type: 'string' },
+      slide_id: { type: 'string' },
+      x: { type: 'number' },
+      y: { type: 'number' },
+      w: { type: 'number' },
+      h: { type: 'number' },
+      style: { type: 'string', description: 'optional style hint, e.g. "minimalist", "isometric"' },
+    },
+    required: ['prompt', 'slide_id'],
+  },
+};
+
 export const ALL_TOOLS: ToolSpec[] = [
+  TOOL_OUTLINE_DECK,
+  TOOL_POPULATE_SLIDE,
   TOOL_GENERATE_DECK,
   TOOL_ADD_SLIDE,
   TOOL_EDIT_BLOCK,
   TOOL_REWRITE_TEXT,
   TOOL_SET_THEME,
+  TOOL_DERIVE_THEME,
+  TOOL_GENERATE_IMAGE,
 ];

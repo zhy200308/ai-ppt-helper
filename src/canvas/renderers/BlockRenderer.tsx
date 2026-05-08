@@ -1,11 +1,9 @@
 import { memo } from 'react';
 import type {
   Block,
-  ChartBlock,
   CodeBlock,
   ConnectorBlock,
   DividerBlock,
-  EmbedBlock,
   IconBlock,
   ImageBlock,
   ListBlock,
@@ -14,6 +12,10 @@ import type {
   TextBlock,
   VideoBlock,
 } from '../../core/schema/types';
+import { EChartsRender } from './EChartsRender';
+import { EmbedRichRender } from './EmbedRichRender';
+import { useActiveSlide } from '../../core/store/deck';
+import { resolveEndpoint } from '../connectorAnchor';
 
 interface Props {
   block: Block;
@@ -25,14 +27,14 @@ export const BlockRenderer = memo(function BlockRenderer({ block, presenting }: 
     case 'text': return <TextRender block={block} />;
     case 'shape': return <ShapeRender block={block} />;
     case 'image': return <ImageRender block={block} />;
-    case 'chart': return <ChartRender block={block} />;
+    case 'chart': return <EChartsRender block={block} />;
     case 'table': return <TableRender block={block} />;
     case 'code': return <CodeRender block={block} />;
     case 'icon': return <IconRender block={block} />;
     case 'list': return <ListRender block={block} />;
     case 'divider': return <DividerRender block={block} />;
     case 'video': return <VideoRender block={block} presenting={presenting} />;
-    case 'embed': return <EmbedRender block={block} />;
+    case 'embed': return <EmbedRichRender block={block} />;
     case 'connector': return <ConnectorRender block={block} />;
     default: return null;
   }
@@ -217,67 +219,6 @@ function ImageRender({ block }: { block: ImageBlock }) {
   );
 }
 
-function ChartRender({ block }: { block: ChartBlock }) {
-  // Lightweight inline SVG bar/line/pie. ECharts integration can replace later.
-  const w = 100;
-  const h = 100;
-  if (block.chart === 'bar') {
-    const flat = block.series.flatMap((s) => s.data);
-    const max = Math.max(1, ...flat);
-    const totalBars = flat.length;
-    return (
-      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
-        {flat.map((v, i) => {
-          const bw = w / (totalBars * 1.4);
-          const x = (i + 0.7) * (w / (totalBars + 1));
-          const bh = (v / max) * (h - 10);
-          return <rect key={i} x={x} y={h - bh - 5} width={bw} height={bh} fill="#4F46E5" />;
-        })}
-      </svg>
-    );
-  }
-  if (block.chart === 'line') {
-    const flat = block.series[0]?.data ?? [];
-    const max = Math.max(1, ...flat);
-    const points = flat.map((v, i) => `${(i / Math.max(1, flat.length - 1)) * w},${h - (v / max) * (h - 10) - 5}`).join(' ');
-    return (
-      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
-        <polyline points={points} fill="none" stroke="#4F46E5" strokeWidth={2} />
-      </svg>
-    );
-  }
-  if (block.chart === 'pie') {
-    const flat = block.series[0]?.data ?? [];
-    const total = flat.reduce((a, b) => a + b, 0) || 1;
-    let acc = 0;
-    return (
-      <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%' }}>
-        {flat.map((v, i) => {
-          const start = acc / total;
-          acc += v;
-          const end = acc / total;
-          const a0 = start * 2 * Math.PI - Math.PI / 2;
-          const a1 = end * 2 * Math.PI - Math.PI / 2;
-          const x0 = 50 + 45 * Math.cos(a0);
-          const y0 = 50 + 45 * Math.sin(a0);
-          const x1 = 50 + 45 * Math.cos(a1);
-          const y1 = 50 + 45 * Math.sin(a1);
-          const large = end - start > 0.5 ? 1 : 0;
-          const colors = ['#4F46E5', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
-          return (
-            <path
-              key={i}
-              d={`M50 50 L${x0} ${y0} A45 45 0 ${large} 1 ${x1} ${y1} Z`}
-              fill={colors[i % colors.length]}
-            />
-          );
-        })}
-      </svg>
-    );
-  }
-  return <div style={{ width: '100%', height: '100%', background: '#F1F5F9' }} />;
-}
-
 function TableRender({ block }: { block: TableBlock }) {
   return (
     <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
@@ -448,45 +389,16 @@ function VideoRender({ block, presenting }: { block: VideoBlock; presenting?: bo
   );
 }
 
-function EmbedRender({ block }: { block: EmbedBlock }) {
-  if (block.kind === 'iframe' && block.src) {
-    return (
-      <iframe
-        src={block.src}
-        title="embed"
-        sandbox="allow-scripts allow-same-origin allow-popups"
-        style={{ width: '100%', height: '100%', border: 0, borderRadius: block.cornerRadius, pointerEvents: 'none' }}
-      />
-    );
-  }
-  return (
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        background: '#F1F5F9',
-        color: '#475569',
-        padding: 12,
-        boxSizing: 'border-box',
-        fontFamily: 'monospace',
-        fontSize: 13,
-        whiteSpace: 'pre-wrap',
-        overflow: 'auto',
-        borderRadius: block.cornerRadius,
-      }}
-    >
-      {block.fallback ?? `[${block.kind}] ${block.src}`}
-    </div>
-  );
-}
-
 function ConnectorRender({ block }: { block: ConnectorBlock }) {
+  const slide = useActiveSlide();
+  const start = slide ? resolveEndpoint(block.start, slide) : block.start;
+  const end = slide ? resolveEndpoint(block.end, slide) : block.end;
   // Coordinates are deck-space; the wrapper already positioned the block,
   // so we draw inside its local rect and convert start/end to local coords.
-  const sx = block.start.x - block.x;
-  const sy = block.start.y - block.y;
-  const ex = block.end.x - block.x;
-  const ey = block.end.y - block.y;
+  const sx = start.x - block.x;
+  const sy = start.y - block.y;
+  const ex = end.x - block.x;
+  const ey = end.y - block.y;
   const dash = block.strokeDash === 'dashed' ? '8 6' : block.strokeDash === 'dotted' ? '2 6' : undefined;
   let d: string;
   if (block.kind === 'straight') {

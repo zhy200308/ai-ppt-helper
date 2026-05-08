@@ -128,19 +128,29 @@ export class AIService {
       });
     const body: any = {
       model: this.config.model,
-      max_tokens: req.maxTokens ?? this.config.maxTokens ?? 4096,
+      max_tokens: req.maxTokens ?? this.config.maxTokens ?? 8192,
       messages,
       stream: req.stream !== false,
     };
-    if (system) body.system = system;
+    if (system) {
+      // Tag the system prompt as cacheable so repeated turns hit the cache.
+      body.system = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
+    }
     if (req.temperature !== undefined) body.temperature = req.temperature;
     else if (this.config.temperature !== undefined) body.temperature = this.config.temperature;
     if (req.tools?.length) {
-      body.tools = req.tools.map((t) => ({
+      body.tools = req.tools.map((t, i) => ({
         name: t.name,
         description: t.description,
         input_schema: t.parameters,
+        // Cache the longest-prefix tool definitions only (last entry).
+        ...(i === (req.tools!.length - 1) ? { cache_control: { type: 'ephemeral' } } : {}),
       }));
+    }
+    // Extended thinking: opt-in via config.maxTokens > 8k. We expose
+    // streamed thinking_delta events via the existing parseAnthropicStream.
+    if ((req.maxTokens ?? this.config.maxTokens ?? 0) >= 16000) {
+      body.thinking = { type: 'enabled', budget_tokens: 8000 };
     }
     const headers = this.buildHeaders('anthropic');
     const resp = await this.fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: req.signal });

@@ -2,6 +2,7 @@ import { useDeckStore, useSelectedBlocks, useActiveSlide } from '../../core/stor
 import type { Block, ImageBlock, ShapeBlock, TextBlock } from '../../core/schema/types';
 import { NumberField } from '../components/NumberField';
 import { ColorField } from '../components/ColorField';
+import { AlignTools } from './AlignTools';
 
 export function RightPanel() {
   const slide = useActiveSlide();
@@ -27,6 +28,7 @@ export function RightPanel() {
             删除全部
           </button>
         </div>
+        <AlignTools slideId={slide.id} blockIds={selected.map((b) => b.id)} />
       </div>
     );
   }
@@ -141,6 +143,7 @@ function ShapeProps({ block, onChange }: { block: ShapeBlock; onChange: (p: Part
 }
 
 function ImageProps({ block, onChange }: { block: ImageBlock; onChange: (p: Partial<ImageBlock>) => void }) {
+  const filter = block.filter ?? {};
   return (
     <div className="panel-section">
       <div className="panel-title">图片</div>
@@ -155,7 +158,7 @@ function ImageProps({ block, onChange }: { block: ImageBlock; onChange: (p: Part
           reader.readAsDataURL(f);
         }}
       />
-      <div className="row">
+      <div className="row" style={{ marginTop: 8 }}>
         {(['cover', 'contain', 'fill'] as const).map((f) => (
           <button
             key={f}
@@ -167,6 +170,22 @@ function ImageProps({ block, onChange }: { block: ImageBlock; onChange: (p: Part
         ))}
       </div>
       <NumberField label="圆角" value={block.cornerRadius ?? 0} onChange={(v) => onChange({ cornerRadius: v })} />
+      <div className="panel-title" style={{ marginTop: 12 }}>滤镜</div>
+      <div className="row">
+        <NumberField label="亮度" step={0.05} min={0} max={3} value={filter.brightness ?? 1} onChange={(v) => onChange({ filter: { ...filter, brightness: v } })} />
+        <NumberField label="对比" step={0.05} min={0} max={3} value={filter.contrast ?? 1} onChange={(v) => onChange({ filter: { ...filter, contrast: v } })} />
+      </div>
+      <div className="row">
+        <NumberField label="饱和" step={0.05} min={0} max={3} value={filter.saturate ?? 1} onChange={(v) => onChange({ filter: { ...filter, saturate: v } })} />
+        <NumberField label="模糊" step={0.5} min={0} max={20} value={filter.blur ?? 0} onChange={(v) => onChange({ filter: { ...filter, blur: v } })} />
+      </div>
+      <button
+        className="btn-sm"
+        style={{ marginTop: 6 }}
+        onClick={() => onChange({ filter: undefined })}
+      >
+        重置滤镜
+      </button>
     </div>
   );
 }

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDeckStore, useActiveSlide } from '../core/store/deck';
-import type { Block, ID, Slide } from '../core/schema/types';
+import type { Block, ID, Slide, TextBlock } from '../core/schema/types';
 import { BlockRenderer } from './renderers/BlockRenderer';
 import { SelectionOverlay } from './SelectionOverlay';
+import { TextEditor } from './TextEditor';
 import { computeSnap, blockToRect, type SnapGuide } from './interactions/snap';
 import { bindPointerDrag } from './interactions/usePointerDrag';
+import { useDropPaste } from './interactions/useDropPaste';
 import { rectsBoundingBox, rectsIntersect, clamp } from '../utils/math';
 
 const SNAP_THRESHOLD = 6;
@@ -26,6 +28,8 @@ export function Stage() {
   const stageRef = useRef<HTMLDivElement>(null);
   const [guides, setGuides] = useState<SnapGuide[]>([]);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [editingBlockId, setEditingBlockId] = useState<ID | null>(null);
+  const updateBlock = useDeckStore((s) => s.updateBlock);
 
   // Auto-fit on first mount and on container resize
   useEffect(() => {
@@ -82,6 +86,8 @@ export function Stage() {
     },
     [pan, zoom],
   );
+
+  useDropPaste(containerRef, clientToDeck);
 
   // Marquee selection on empty-canvas drag
   useEffect(() => {
@@ -233,31 +239,53 @@ export function Stage() {
       >
         {[...slide.blocks]
           .sort((a, b) => a.z - b.z)
-          .map((block) => (
-            <div
-              key={block.id}
-              data-block-hit
-              data-block-id={block.id}
-              onPointerDown={(e) => onBlockPointerDown(e, block)}
-              style={{
-                position: 'absolute',
-                left: block.x,
-                top: block.y,
-                width: block.w,
-                height: block.h,
-                transform: block.rotation ? `rotate(${block.rotation}deg)` : undefined,
-                opacity: block.opacity ?? 1,
-                cursor: presenting ? 'default' : 'move',
-                userSelect: 'none',
-                pointerEvents: block.hidden ? 'none' : 'auto',
-                visibility: block.hidden ? 'hidden' : 'visible',
-                outline: selection.blockIds.includes(block.id) && !presenting ? '2px solid #4F46E5' : undefined,
-                outlineOffset: -1,
-              }}
-            >
-              <BlockRenderer block={block} presenting={presenting} />
-            </div>
-          ))}
+          .map((block) => {
+            const isEditing = editingBlockId === block.id;
+            return (
+              <div
+                key={block.id}
+                data-block-hit
+                data-block-id={block.id}
+                onPointerDown={(e) => !isEditing && onBlockPointerDown(e, block)}
+                onDoubleClick={(e) => {
+                  if (presenting) return;
+                  if (block.type === 'text') {
+                    e.stopPropagation();
+                    setEditingBlockId(block.id);
+                  }
+                }}
+                style={{
+                  position: 'absolute',
+                  left: block.x,
+                  top: block.y,
+                  width: block.w,
+                  height: block.h,
+                  transform: block.rotation ? `rotate(${block.rotation}deg)` : undefined,
+                  opacity: block.opacity ?? 1,
+                  cursor: presenting ? 'default' : isEditing ? 'text' : 'move',
+                  userSelect: isEditing ? 'text' : 'none',
+                  pointerEvents: block.hidden ? 'none' : 'auto',
+                  visibility: block.hidden ? 'hidden' : 'visible',
+                  outline: selection.blockIds.includes(block.id) && !presenting && !isEditing ? '2px solid #4F46E5' : undefined,
+                  outlineOffset: -1,
+                }}
+              >
+                {isEditing && block.type === 'text' ? (
+                  <TextEditor
+                    block={block as TextBlock}
+                    zoom={zoom}
+                    onCommit={(patch) => {
+                      updateBlock(slide.id, block.id, patch as Partial<Block>);
+                      setEditingBlockId(null);
+                    }}
+                    onCancel={() => setEditingBlockId(null)}
+                  />
+                ) : (
+                  <BlockRenderer block={block} presenting={presenting} />
+                )}
+              </div>
+            );
+          })}
 
         {!presenting && (
           <SelectionOverlay
