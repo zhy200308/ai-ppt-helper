@@ -16,8 +16,8 @@ export interface YjsCollabOptions {
 }
 
 export async function activateYjsCollab(opts: YjsCollabOptions): Promise<CollabProvider> {
-  const Y = await import('yjs');
-  const { WebsocketProvider } = await import('y-websocket');
+  const Y = await import(/* @vite-ignore */ 'yjs');
+  const { WebsocketProvider } = await import(/* @vite-ignore */ 'y-websocket');
 
   const doc = new Y.Doc();
   const wsProvider = new WebsocketProvider(opts.url, opts.room, doc);

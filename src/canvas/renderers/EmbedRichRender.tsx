@@ -37,13 +37,17 @@ function MermaidView({ source, fallback, cornerRadius }: { source: string; fallb
     let cancelled = false;
     (async () => {
       try {
-        const mermaid = (await import('mermaid')).default;
+        const mermaid = (await import(/* @vite-ignore */ 'mermaid')).default;
         mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict' });
         const id = `mmd-${Math.random().toString(36).slice(2, 9)}`;
         const { svg } = await mermaid.render(id, source || fallback || 'graph TD; A-->B');
         if (!cancelled && ref.current) ref.current.innerHTML = svg;
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) {
+          const m = e instanceof Error ? e.message : String(e);
+          setError(/cannot find|Failed to (resolve|fetch)/i.test(m)
+            ? '未安装 mermaid，请运行 `npm install` 后刷新' : m);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -69,15 +73,19 @@ function KaTeXView({ source, cornerRadius }: { source: string; cornerRadius?: nu
     let cancelled = false;
     (async () => {
       try {
-        const katex = (await import('katex')).default;
-        await import('katex/dist/katex.min.css');
+        const katex = (await import(/* @vite-ignore */ 'katex')).default;
+        await import(/* @vite-ignore */ 'katex/dist/katex.min.css');
         if (cancelled || !ref.current) return;
         ref.current.innerHTML = katex.renderToString(source || 'E = mc^2', {
           throwOnError: false,
           displayMode: true,
         });
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) {
+          const m = e instanceof Error ? e.message : String(e);
+          setError(/cannot find|Failed to (resolve|fetch)/i.test(m)
+            ? '未安装 katex，请运行 `npm install` 后刷新' : m);
+        }
       }
     })();
     return () => { cancelled = true; };
