@@ -97,9 +97,15 @@ export const TOOL_SET_THEME: ToolSpec = {
   },
 };
 
+const LAYOUT_ENUM = [
+  'cover-bold', 'cover-image', 'agenda', 'section-divider', 'bullet',
+  'two-column-text', 'image-left', 'image-right', 'kpi-trio', 'comparison',
+  'timeline-h', 'steps-vertical', 'quote', 'closing',
+];
+
 export const TOOL_OUTLINE_DECK: ToolSpec = {
   name: 'outline_deck',
-  description: 'Plan a deck as a sequence of slide titles + one-line goals (NO body content). Use this as the FIRST step when the user asks for a brand new deck. The orchestrator will then populate each slide.',
+  description: 'Plan a deck as a sequence of slide titles + one-line goals (NO body content). The orchestrator immediately renders skeleton slides so the user sees structure within ~1s, then you call populate_slide for each.',
   parameters: {
     type: 'object',
     properties: {
@@ -110,7 +116,7 @@ export const TOOL_OUTLINE_DECK: ToolSpec = {
         items: {
           type: 'object',
           properties: {
-            layout: { type: 'string', enum: ['cover', 'agenda', 'two-column', 'image-left', 'kpi', 'quote', 'closing', 'bullet'] },
+            layout: { type: 'string', enum: LAYOUT_ENUM },
             title: { type: 'string' },
             goal: { type: 'string', description: 'One-line description of what this slide must communicate' },
           },
@@ -124,15 +130,91 @@ export const TOOL_OUTLINE_DECK: ToolSpec = {
 
 export const TOOL_POPULATE_SLIDE: ToolSpec = {
   name: 'populate_slide',
-  description: 'Fill in the body of a single slide that was previously outlined. Use AFTER outline_deck to produce slide bodies one by one.',
+  description: 'Fill in the body of a single outlined slide. Provide ONLY the fields relevant to the slide layout (see SYSTEM PROMPT for the mapping).',
   parameters: {
     type: 'object',
     properties: {
       slide_id: { type: 'string' },
+      eyebrow: { type: 'string' },
       subtitle: { type: 'string' },
-      bullets: { type: 'array', items: { type: 'string' } },
       body: { type: 'string' },
-      notes: { type: 'string' },
+      bullets: { type: 'array', items: { type: 'string' } },
+      numbered: { type: 'boolean' },
+      stats: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            label: { type: 'string' },
+            value: { type: 'string' },
+            sub: { type: 'string' },
+          },
+          required: ['label', 'value'],
+        },
+      },
+      comparison: {
+        type: 'object',
+        properties: {
+          left: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              bullets: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['title', 'bullets'],
+          },
+          right: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              bullets: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['title', 'bullets'],
+          },
+        },
+        required: ['left', 'right'],
+      },
+      timeline: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            ts: { type: 'string' },
+            title: { type: 'string' },
+            body: { type: 'string' },
+          },
+          required: ['ts', 'title'],
+        },
+      },
+      steps: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            body: { type: 'string' },
+          },
+          required: ['title'],
+        },
+      },
+      quote: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          author: { type: 'string' },
+          role: { type: 'string' },
+        },
+        required: ['text'],
+      },
+      image: {
+        type: 'object',
+        properties: {
+          src: { type: 'string', description: 'Data URL or asset URL; pair with generate_image first if you need a fresh asset.' },
+          alt: { type: 'string' },
+          caption: { type: 'string' },
+        },
+      },
+      notes: { type: 'string', description: '演讲者备注（不出现在画布上）' },
     },
     required: ['slide_id'],
   },

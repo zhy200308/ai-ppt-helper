@@ -3,34 +3,69 @@
 
 import { useDeckStore } from '../core/store/deck';
 import { useSettingsStore } from '../core/store/settings';
-import {
-  createDeck, createTextBlock, newId, createSlide,
-} from '../core/schema/factory';
+import { createDeck, newId, createSlide } from '../core/schema/factory';
 import type { Block, Slide } from '../core/schema/types';
 import { AIService, type ChatMessage, type StreamEvent } from './service';
 import { ALL_TOOLS } from './tools';
 import { derivePalette, suggestFontPair } from '../themes/colorIntelligence';
 import { loadSkill, parseSlash } from '../skills';
+import { buildLayout, LAYOUT_REGISTRY } from '../generation/layouts';
+import { validateSlide } from '../generation/validator';
+import { captureSnapshot } from '../core/persistence/snapshots';
+import { DECK_SIZE } from '../core/schema/factory';
+import type { LayoutKey, SlideContent } from '../generation/types';
 
 const SYSTEM_PROMPT = `You are an industrial-grade AI PowerPoint co-pilot. You design slides like
 a senior product designer: bold typography, restrained palettes, tasteful spacing.
 
-Conventions:
-- Always prefer calling a tool over describing an action in plain text.
-- Producing a brand new deck is a TWO-step process:
-    1. Call \`outline_deck\` with slide titles + one-line goals only.
-    2. The orchestrator will return a list of slide ids; you then call
-       \`populate_slide\` once per id with the actual subtitle/bullets/body/notes.
-  This streams content slide-by-slide so users see progress immediately.
-- Use \`add_slide\` to extend an existing deck; \`edit_block\` / \`rewrite_text\`
-  for fine-grained edits; \`set_theme\` to alter visual identity;
-  \`generate_image\` for cover or featured visuals.
-- Slides must be concise. Cover slides: one clear title + subtitle. Body
-  slides: <= 6 bullets, each <= 14 words. Avoid filler.
-- When the user @-mentions a slide or block (e.g. \`@slide:3\` or \`@block:abc\`),
-  treat that selection as the operand.
+# Workflow
+Producing a brand new deck is a TWO-step process:
+  1. Call \`outline_deck\` with slide titles + one-line goals + a layout key
+     for each (NOT body content). The orchestrator builds skeleton slides
+     IMMEDIATELY so the user sees the shape of the deck within ~1s.
+  2. For EACH slide in the outline (in order), call \`populate_slide\` with
+     the rich content for that layout. After your last populate_slide call,
+     write a one-paragraph plaintext summary.
 
-Output should be in the same language the user uses.`;
+Always use \`outline_deck\` first when the user asks for a deck, even short
+ones. Never call \`generate_deck\` unless the user explicitly says "do it
+all in one go".
+
+# Available layouts (pick the one that best matches the slide's role)
+- cover-bold: brand-stripe + huge title + subtitle (use for slide 1)
+- cover-image: full-bleed image cover with overlay text + subtitle
+- agenda: numbered table of contents (3-6 bullets)
+- section-divider: large section break between major topics
+- bullet: title + 3-6 bullets
+- two-column-text: title + two columns of bullets (when content has two parallel ideas)
+- image-left / image-right: title + bullets/body alongside an image
+- kpi-trio: 3 large numerical KPIs with labels and sub-captions
+- comparison: side-by-side option-A vs option-B with bullets
+- timeline-h: 3-5 milestones laid out horizontally
+- steps-vertical: 3-5 ordered steps
+- quote: pull-quote with author + role
+- closing: thank-you / call-to-action (use for last slide)
+
+# populate_slide content shape
+Each layout consumes specific fields; provide ONLY the relevant ones:
+- cover-bold / cover-image / closing: title + subtitle (+ optional eyebrow)
+- agenda / bullet / two-column-text: bullets[] (each <= 14 words)
+- image-left / image-right: bullets[] OR body, plus image.src if available
+- kpi-trio: stats[] of {label, value, sub}; max 3 entries
+- comparison: comparison.{left,right}.{title,bullets[]}
+- timeline-h: timeline[] of {ts, title, body?}; max 5
+- steps-vertical: steps[] of {title, body?}; max 5
+- quote: quote.{text, author?, role?}
+
+# Style discipline
+- <= 6 bullets per body slide, each <= 14 words
+- Use parallel structure across bullets (start with same part of speech)
+- Numbers: write them out for impact ("87%" not "approximately 87 percent")
+- When @slide:N or @block:abc references appear, they are the edit target
+- The validator will clamp blocks to the canvas and fix contrast; do not
+  worry about pixel coordinates
+
+Output should be in the same language as the user.`;
 
 export interface ChatSessionMessage {
   id: string;
@@ -101,11 +136,19 @@ function doOutlineDeck(input: any): string {
   const fresh = createDeck(input.title || 'AI Generated Deck');
   fresh.slides = [];
   for (const sd of slides) {
-    const slide = buildSlideFromSpec({ ...sd, body: sd.goal }, fresh.theme);
-    fresh.slides.push(slide);
+    // Use the goal as a small subtitle so users see something coherent
+    // immediately; populate_slide will overwrite later.
+    const skeleton = buildSlideFromSpec({
+      layout: sd.layout,
+      title: sd.title,
+      subtitle: sd.goal,
+    }, fresh.theme);
+    fresh.slides.push(skeleton);
   }
   useDeckStore.getState().loadDeck(fresh);
   const ids = fresh.slides.map((s) => s.id);
+  // Snapshot the outline so the user can roll back to it.
+  void captureSnapshot(`AI outline · ${fresh.slides.length} 页`, 'ai');
   return `outlined ${ids.length} slides; ids=${ids.join(',')}`;
 }
 
@@ -115,19 +158,34 @@ function doPopulateSlide(input: any): string {
   const store = useDeckStore.getState();
   const orig = store.deck.slides.find((s) => s.id === slide_id);
   if (!orig) return `slide ${slide_id} not found`;
+  let issues: string[] = [];
   store.mutate('Populate slide', (draft) => {
     const s = draft.slides.find((x) => x.id === slide_id);
     if (!s) return;
-    // Replace blocks with a fresh layout based on the new content.
     const next = buildSlideFromSpec({
       layout: orig.layout,
       title: extractTitle(orig),
       subtitle, bullets, body, notes,
+      // Pass through any of the rich content fields the model may emit:
+      eyebrow: input.eyebrow,
+      stats: input.stats,
+      comparison: input.comparison,
+      timeline: input.timeline,
+      quote: input.quote,
+      steps: input.steps,
+      image: input.image,
+      numbered: input.numbered,
     }, draft.theme);
     s.blocks = next.blocks;
     s.notes = notes ?? s.notes;
+    // Quality validator pass: clamp, fix contrast, flag overflow.
+    const v = validateSlide(s, draft.theme, draft.meta.width, draft.meta.height);
+    s.blocks = v.blocks;
+    issues = v.issues.filter((i) => i.severity !== 'info').map((i) => i.message);
   });
-  return `populated ${slide_id}`;
+  return issues.length
+    ? `populated ${slide_id}; issues: ${issues.join('; ')}`
+    : `populated ${slide_id}`;
 }
 
 function extractTitle(slide: any): string {
@@ -243,70 +301,37 @@ function doSetTheme(input: any): string {
   return `theme ${theme.name} applied`;
 }
 
-function buildSlideFromSpec(spec: any, theme: { primaryColor: string; accentColor: string; backgroundColor: string; textColor: string; mutedColor: string; fontFamilyHeading: string; fontFamilyBody: string }): Slide {
-  const slide = createSlide({
+function buildSlideFromSpec(spec: any, theme: { primaryColor: string; accentColor: string; backgroundColor: string; textColor: string; mutedColor: string; fontFamilyHeading: string; fontFamilyBody: string; name?: string }): Slide {
+  const layoutKey: LayoutKey = LAYOUT_REGISTRY[spec.layout] ? spec.layout : 'bullet';
+  const content: SlideContent = {
+    layout: layoutKey,
+    title: spec.title,
+    eyebrow: spec.eyebrow,
+    subtitle: spec.subtitle,
+    body: spec.body,
+    bullets: spec.bullets,
+    numbered: !!spec.numbered,
+    image: spec.image,
+    stats: spec.stats,
+    comparison: spec.comparison,
+    timeline: spec.timeline,
+    quote: spec.quote,
+    steps: spec.steps,
+    notes: spec.notes,
+  };
+  const themeFull: any = { name: theme.name ?? 'AI', ...theme };
+  const blocks = buildLayout(content, {
+    theme: themeFull,
+    width: DECK_SIZE.width,
+    height: DECK_SIZE.height,
+  });
+  return createSlide({
     id: newId('sld'),
-    layout: spec.layout,
+    layout: layoutKey,
     background: { color: theme.backgroundColor },
     notes: spec.notes ?? '',
-    blocks: [],
+    blocks,
   });
-  const H = 1080;
-  const layout = spec.layout || 'bullet';
-
-  if (layout === 'cover') {
-    slide.blocks.push({
-      id: newId('blk'), type: 'shape', shape: 'rectangle',
-      z: 0, x: 0, y: 0, w: 16, h: H, fill: theme.primaryColor,
-    });
-    slide.blocks.push(createTextBlock({
-      id: newId('blk'), x: 160, y: 380, w: 1600, h: 200,
-      runs: [{ text: spec.title, bold: true }],
-      fontSize: 96, color: theme.textColor, fontFamily: theme.fontFamilyHeading,
-    }));
-    if (spec.subtitle) {
-      slide.blocks.push(createTextBlock({
-        id: newId('blk'), x: 160, y: 600, w: 1600, h: 100,
-        runs: [{ text: spec.subtitle }],
-        fontSize: 36, color: theme.mutedColor, fontFamily: theme.fontFamilyBody,
-      }));
-    }
-    return slide;
-  }
-
-  // generic: title + body/bullets
-  slide.blocks.push(createTextBlock({
-    id: newId('blk'), x: 160, y: 120, w: 1600, h: 120,
-    runs: [{ text: spec.title, bold: true }],
-    fontSize: 56, color: theme.textColor, fontFamily: theme.fontFamilyHeading,
-  }));
-  slide.blocks.push({
-    id: newId('blk'), type: 'shape', shape: 'rectangle',
-    z: 0, x: 160, y: 240, w: 120, h: 6, fill: theme.accentColor,
-  });
-
-  if (Array.isArray(spec.bullets) && spec.bullets.length) {
-    const startY = 320;
-    const lineH = 84;
-    for (let i = 0; i < spec.bullets.length; i++) {
-      slide.blocks.push(createTextBlock({
-        id: newId('blk'),
-        x: 200, y: startY + i * lineH, w: 1520, h: lineH - 8,
-        runs: [{ text: `•  ${spec.bullets[i]}` }],
-        fontSize: 36, color: theme.textColor, fontFamily: theme.fontFamilyBody,
-        align: 'left', vAlign: 'middle',
-      }));
-    }
-  } else if (spec.body) {
-    slide.blocks.push(createTextBlock({
-      id: newId('blk'), x: 200, y: 320, w: 1520, h: 600,
-      runs: [{ text: String(spec.body) }],
-      fontSize: 32, color: theme.textColor,
-      fontFamily: theme.fontFamilyBody,
-      align: 'left', vAlign: 'top',
-    }));
-  }
-  return slide;
 }
 
 // ============================================================

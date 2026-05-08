@@ -11,6 +11,7 @@ import {
 } from '../../core/schema/factory';
 import { exportPptx } from '../../export/pptx';
 import { exportPng } from '../../export/png';
+import { exportPdf } from '../../export/pdf';
 import { useEffect, useRef } from 'react';
 
 interface Props {
@@ -151,8 +152,11 @@ export function TopBar({ onToggleSettings, onToggleChat }: Props) {
         <button className="btn-sm btn-primary" onClick={handleExportPptx} disabled={exporting}>
           <Download size={14}/> {exporting ? '导出中…' : '导出 PPTX'}
         </button>
+        <button className="btn-sm" onClick={() => exportPdf(useDeckStore.getState().deck)}>
+          PDF
+        </button>
         <button className="btn-sm" onClick={() => exportPng(useDeckStore.getState().deck)}>
-          <Plus size={14}/> PNG
+          PNG
         </button>
         <button className="icon-btn" onClick={onToggleSettings} title="设置"><SettingsIcon size={14}/></button>
       </div>

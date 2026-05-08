@@ -2,7 +2,11 @@
 // Coords are converted from deck-space px (1920x1080) to inches.
 
 import PptxGenJS from 'pptxgenjs';
-import type { Block, Deck, ShapeBlock, TextBlock, ImageBlock, ChartBlock, TableBlock } from '../core/schema/types';
+import type {
+  Block, Deck, ShapeBlock, TextBlock, ImageBlock, ChartBlock, TableBlock,
+  ListBlock, DividerBlock, VideoBlock, EmbedBlock, ConnectorBlock,
+} from '../core/schema/types';
+import { resolveEndpoint } from '../canvas/connectorAnchor';
 
 const SLIDE_W_INCH = 13.333; // 16:9 widescreen
 const SLIDE_H_INCH = 7.5;
@@ -25,7 +29,7 @@ export async function exportPptx(deck: Deck): Promise<void> {
     const sorted = [...slide.blocks].sort((a, b) => a.z - b.z);
     for (const block of sorted) {
       if (block.hidden) continue;
-      addBlockToSlide(s, block, sx, sy);
+      addBlockToSlide(s, block, sx, sy, slide);
     }
   }
 
@@ -33,7 +37,7 @@ export async function exportPptx(deck: Deck): Promise<void> {
   await pptx.writeFile({ fileName: filename });
 }
 
-function addBlockToSlide(slide: any, block: Block, sx: number, sy: number) {
+function addBlockToSlide(slide: any, block: Block, sx: number, sy: number, parentSlide?: import('../core/schema/types').Slide) {
   const x = block.x * sx;
   const y = block.y * sy;
   const w = block.w * sx;
@@ -68,7 +72,109 @@ function addBlockToSlide(slide: any, block: Block, sx: number, sy: number) {
     case 'icon':
       slide.addText(block.iconName, { x, y, w, h, align: 'center', valign: 'middle' });
       break;
+    case 'list':
+      addListBlock(slide, block, { x, y, w, h });
+      break;
+    case 'divider':
+      addDividerBlock(slide, block, { x, y, w, h });
+      break;
+    case 'video':
+      addVideoBlock(slide, block, { x, y, w, h });
+      break;
+    case 'embed':
+      addEmbedBlock(slide, block, { x, y, w, h });
+      break;
+    case 'connector':
+      if (parentSlide) addConnectorBlock(slide, block, sx, sy, parentSlide);
+      break;
   }
+}
+
+function addListBlock(slide: any, block: ListBlock, geo: any) {
+  const text = block.items.map((item) => ({
+    text: item.text,
+    options: {
+      bullet: block.ordered
+        ? { type: 'number' as const, indent: (item.level || 0) * 20 }
+        : { indent: (item.level || 0) * 20 },
+      color: stripHash(block.color ?? '#0F172A'),
+      fontSize: (block.fontSize ?? 28) * 0.75,
+      fontFace: block.fontFamily,
+    },
+  }));
+  slide.addText(text, {
+    ...geo,
+    valign: 'top',
+    paraSpaceAfter: 6,
+  });
+}
+
+function addDividerBlock(slide: any, block: DividerBlock, geo: any) {
+  slide.addShape('line', {
+    ...geo,
+    line: {
+      color: stripHash(block.color ?? '#CBD5E1'),
+      width: block.thickness ?? 2,
+      dashType: block.style === 'dashed' ? 'dash' : block.style === 'dotted' ? 'sysDot' : 'solid',
+    },
+  });
+}
+
+function addVideoBlock(slide: any, block: VideoBlock, geo: any) {
+  if (!block.src) return;
+  const isData = block.src.startsWith('data:');
+  if (isData) {
+    slide.addMedia({ ...geo, type: 'video', data: block.src });
+  } else {
+    slide.addMedia({ ...geo, type: 'video', path: block.src });
+  }
+}
+
+function addEmbedBlock(slide: any, block: EmbedBlock, geo: any) {
+  // PPTX has no live iframes / mermaid; render a placeholder card with the
+  // source url so the user can recognize it after import.
+  const label = block.kind === 'iframe'
+    ? `🌐 ${block.src}`
+    : block.kind === 'mermaid'
+      ? '📊 Mermaid 图表'
+      : block.kind === 'math'
+        ? '∑ 公式'
+        : 'HTML';
+  slide.addText([
+    { text: label, options: { bold: true, fontSize: 16, color: '4F46E5' } },
+    { text: '\n' + (block.fallback ?? ''), options: { fontSize: 12, color: '64748B' } },
+  ], {
+    ...geo,
+    fill: { color: 'F1F5F9' },
+    line: { color: 'CBD5E1', width: 1, dashType: 'dash' },
+    valign: 'middle',
+    align: 'center',
+    margin: 12,
+  });
+}
+
+function addConnectorBlock(slide: any, block: ConnectorBlock, sx: number, sy: number, parentSlide: import('../core/schema/types').Slide) {
+  const start = resolveEndpoint(block.start, parentSlide);
+  const end = resolveEndpoint(block.end, parentSlide);
+  // PPTX line shape uses a bounding rect + flipH/flipV. Use the actual span.
+  const x = Math.min(start.x, end.x) * sx;
+  const y = Math.min(start.y, end.y) * sy;
+  const w = Math.max(8, Math.abs(end.x - start.x) * sx);
+  const h = Math.max(8, Math.abs(end.y - start.y) * sy);
+  const flipH = end.x < start.x;
+  const flipV = end.y < start.y;
+  const dash = block.strokeDash === 'dashed' ? 'dash' : block.strokeDash === 'dotted' ? 'sysDot' : 'solid';
+  slide.addShape(block.arrowEnd ? 'line' : 'line', {
+    x, y, w, h,
+    flipH, flipV,
+    line: {
+      color: stripHash(block.color ?? '#475569'),
+      width: block.strokeWidth ?? 2,
+      dashType: dash,
+      beginArrowType: block.arrowStart ? 'triangle' : 'none',
+      endArrowType: block.arrowEnd ? 'triangle' : 'none',
+    },
+  });
 }
 
 function addTextBlock(slide: any, block: TextBlock, geo: any) {

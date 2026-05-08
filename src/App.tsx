@@ -10,12 +10,14 @@ import { Splitter } from './ui/components/Splitter';
 import { useDeckStore } from './core/store/deck';
 import { useGlobalHotkeys } from './core/events/hotkeys';
 import { useAutosave } from './core/persistence/autosave';
+import { useAutoSnapshots } from './core/persistence/snapshots';
 import { useUIStore } from './core/store/ui';
 import './styles/app.css';
 
 export default function App() {
   useGlobalHotkeys();
   useAutosave();
+  useAutoSnapshots();
   const [showSettings, setShowSettings] = useState(false);
   const presenting = useDeckStore((s) => s.presenting);
   const setPresenting = useDeckStore((s) => s.setPresenting);

@@ -1,9 +1,10 @@
 import { memo, useState } from 'react';
-import { Plus, Copy, Trash2, GripVertical, FolderOpen } from 'lucide-react';
+import { Plus, Copy, Trash2, GripVertical, FolderOpen, History } from 'lucide-react';
 import { useDeckStore } from '../../core/store/deck';
 import type { Slide } from '../../core/schema/types';
 import { ThumbnailRender } from './ThumbnailRender';
 import { ProjectList } from './ProjectList';
+import { HistoryTimeline } from './HistoryTimeline';
 
 export function SlideList() {
   const slides = useDeckStore((s) => s.deck.slides);
@@ -15,10 +16,12 @@ export function SlideList() {
   const reorderSlides = useDeckStore((s) => s.reorderSlides);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [showProjects, setShowProjects] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   return (
     <div className="slide-list" style={{ position: 'relative' }}>
       {showProjects && <ProjectList onClose={() => setShowProjects(false)} />}
+      {showHistory && <HistoryTimeline onClose={() => setShowHistory(false)} />}
       <div className="slide-list-header">
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <button
@@ -27,6 +30,13 @@ export function SlideList() {
             title="项目历史"
           >
             <FolderOpen size={12}/>
+          </button>
+          <button
+            className="icon-btn xs"
+            onClick={() => setShowHistory(true)}
+            title="版本历史"
+          >
+            <History size={12}/>
           </button>
           幻灯片 ({slides.length})
         </span>
