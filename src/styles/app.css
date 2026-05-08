@@ -694,6 +694,128 @@
 .field-label svg { vertical-align: middle; margin-left: 4px; opacity: 0.6; }
 
 /* ============================================================
+   Presenter overlay
+   ============================================================ */
+.presenter {
+  position: fixed;
+  inset: 0;
+  background: #0F172A;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  color: #F1F5F9;
+}
+.presenter-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.presenter-canvas { transform-origin: center center; }
+.presenter-laser {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #EF4444 0%, rgba(239, 68, 68, 0.4) 50%, transparent 75%);
+  pointer-events: none;
+  mix-blend-mode: screen;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+  z-index: 5;
+}
+.presenter-notes {
+  position: fixed;
+  right: 20px;
+  bottom: 80px;
+  max-width: 360px;
+  max-height: 320px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.presenter-notes-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+.presenter-notes pre {
+  margin: 0;
+  font-family: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.presenter-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(15, 23, 42, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(6px);
+}
+.presenter-toolbar .icon-btn { color: #F1F5F9; }
+.presenter-toolbar .icon-btn:hover { background: rgba(255, 255, 255, 0.08); }
+.presenter-toolbar .icon-btn.active { background: var(--accent); color: #fff; }
+.presenter-toolbar .icon-btn:disabled { opacity: 0.3; }
+.presenter-toolbar .sep {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 0 4px;
+}
+.presenter-counter, .presenter-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.85;
+}
+
+/* ============================================================
+   Inline text-editor toolbar
+   ============================================================ */
+.text-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-modal);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  font-size: 12px;
+}
+.text-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  color: var(--text-default);
+}
+.text-toolbar button:hover { background: var(--bg-soft); }
+.text-toolbar input[type="color"] {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.text-toolbar .sep { width: 1px; height: 16px; background: var(--border-subtle); margin: 0 2px; }
+
+/* ============================================================
    Splitter
    ============================================================ */
 .splitter {

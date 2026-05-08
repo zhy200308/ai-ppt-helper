@@ -171,11 +171,21 @@ export interface EmbedBlock extends BlockBase {
   cornerRadius?: number;
 }
 
+export type AnchorEdge = 'top' | 'bottom' | 'left' | 'right' | 'center';
+
+export interface ConnectorEndpoint {
+  // Either an absolute deck-space point (free) or anchored to a sibling block.
+  blockId?: ID;
+  edge?: AnchorEdge;
+  x: number;
+  y: number;
+}
+
 export interface ConnectorBlock extends BlockBase {
   type: 'connector';
   kind: 'straight' | 'elbow' | 'curve';
-  start: { x: number; y: number };
-  end: { x: number; y: number };
+  start: ConnectorEndpoint;
+  end: ConnectorEndpoint;
   color?: RGBA;
   strokeWidth?: number;
   arrowStart?: boolean;

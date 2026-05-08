@@ -5,7 +5,9 @@ import { RightPanel } from './ui/RightPanel/RightPanel';
 import { TopBar } from './ui/TopBar/TopBar';
 import { ChatPanel } from './ui/Chat/ChatPanel';
 import { SettingsPanel } from './ui/Settings/SettingsPanel';
+import { Presenter } from './ui/Presenter/Presenter';
 import { Splitter } from './ui/components/Splitter';
+import { useDeckStore } from './core/store/deck';
 import { useGlobalHotkeys } from './core/events/hotkeys';
 import { useAutosave } from './core/persistence/autosave';
 import { useUIStore } from './core/store/ui';
@@ -15,6 +17,8 @@ export default function App() {
   useGlobalHotkeys();
   useAutosave();
   const [showSettings, setShowSettings] = useState(false);
+  const presenting = useDeckStore((s) => s.presenting);
+  const setPresenting = useDeckStore((s) => s.setPresenting);
   const showChat = useUIStore((s) => s.showChat);
   const setChatVisible = useUIStore((s) => s.toggleChat);
   const leftWidth = useUIStore((s) => s.leftWidth);
@@ -52,6 +56,7 @@ export default function App() {
         )}
       </div>
       <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      {presenting && <Presenter onClose={() => setPresenting(false)} />}
     </div>
   );
 }

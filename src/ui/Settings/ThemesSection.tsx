@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useSettingsStore } from '../../core/store/settings';
 import { useDeckStore } from '../../core/store/deck';
-import { Trash2, Plus } from 'lucide-react';
+import { Trash2, Plus, Upload } from 'lucide-react';
 import { DEFAULT_THEME } from '../../core/schema/factory';
 import type { ImportedTheme } from '../../core/store/settings';
+import { parsePptxTheme } from '../../themes/pptxParser';
 
 const PRESETS: ImportedTheme[] = [
   {
@@ -64,7 +66,26 @@ export function ThemesSection() {
   const activeId = useSettingsStore((s) => s.activeThemeId);
   const setActive = useSettingsStore((s) => s.setActiveTheme);
   const remove = useSettingsStore((s) => s.removeTheme);
+  const addTheme = useSettingsStore((s) => s.addTheme);
   const setTheme = useDeckStore((s) => s.setTheme);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handlePptx = async (f: File | null) => {
+    if (!f) return;
+    setImporting(true);
+    setError(null);
+    try {
+      const theme = await parsePptxTheme(f);
+      addTheme(theme);
+      setActive(theme.id);
+      setTheme(theme);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const apply = (t: ImportedTheme) => {
     setActive(t.id);
@@ -84,6 +105,21 @@ export function ThemesSection() {
     <section className="settings-content">
       <h3>主题模板</h3>
       <p className="hint">主题决定颜色、字体与排版基调。AI 在生成 PPT 时会自动遵循当前主题。</p>
+
+      <div className="row" style={{ marginBottom: 12 }}>
+        <label className="btn-sm btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Upload size={11}/>
+          {importing ? '解析中…' : '从 PPTX 导入主题'}
+          <input
+            type="file"
+            accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            disabled={importing}
+            style={{ display: 'none' }}
+            onChange={(e) => void handlePptx(e.target.files?.[0] ?? null)}
+          />
+        </label>
+        {error && <span className="form-error" style={{ marginLeft: 8 }}>{error}</span>}
+      </div>
 
       <div className="provider-group-label">内置主题</div>
       <div className="theme-grid">
