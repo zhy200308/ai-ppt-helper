@@ -1,23 +1,36 @@
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { ChartBlock } from '../../core/schema/types';
 
-// Lazy-init ECharts. Falls back to nothing if the lib fails to load.
+// Lazy-load ECharts at runtime. Wrapped in try/catch so a missing
+// install (developer forgot `npm install`) shows a placeholder instead
+// of crashing the entire app.
 export const EChartsRender = memo(function EChartsRender({ block }: { block: ChartBlock }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let disposed = false;
     let resizeObs: ResizeObserver | null = null;
 
     (async () => {
-      const echarts = await import('echarts');
-      if (disposed || !ref.current) return;
-      const inst = echarts.init(ref.current);
-      chartRef.current = inst;
-      inst.setOption(buildOption(block));
-      resizeObs = new ResizeObserver(() => inst.resize());
-      resizeObs.observe(ref.current);
+      try {
+        // The /* @vite-ignore */ tells Vite not to fail dev pre-transform
+        // when the package is absent; we surface the error at runtime instead.
+        const echarts = await import(/* @vite-ignore */ 'echarts');
+        if (disposed || !ref.current) return;
+        const inst = echarts.init(ref.current);
+        chartRef.current = inst;
+        inst.setOption(buildOption(block));
+        resizeObs = new ResizeObserver(() => inst.resize());
+        resizeObs.observe(ref.current);
+      } catch (e) {
+        if (disposed) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg.includes('ECHARTS') || msg.includes('echarts')
+          ? '未安装 echarts，请运行 `npm install` 后刷新'
+          : msg);
+      }
     })();
 
     return () => {
@@ -32,6 +45,13 @@ export const EChartsRender = memo(function EChartsRender({ block }: { block: Cha
     if (chartRef.current) chartRef.current.setOption(buildOption(block), { notMerge: true });
   }, [block]);
 
+  if (error) {
+    return (
+      <div style={{ width: '100%', height: '100%', background: '#FEF3C7', color: '#92400E', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, padding: 12, textAlign: 'center', borderRadius: 6 }}>
+        {error}
+      </div>
+    );
+  }
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />;
 });
 
