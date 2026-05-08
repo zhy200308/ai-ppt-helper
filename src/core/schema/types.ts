@@ -181,6 +181,18 @@ export interface ConnectorEndpoint {
   y: number;
 }
 
+export interface InkStroke {
+  color: RGBA;
+  width: number;
+  // Local coordinates relative to the InkBlock's top-left (deck-space).
+  points: { x: number; y: number; pressure?: number }[];
+}
+
+export interface InkBlock extends BlockBase {
+  type: 'ink';
+  strokes: InkStroke[];
+}
+
 export interface ConnectorBlock extends BlockBase {
   type: 'connector';
   kind: 'straight' | 'elbow' | 'curve';
@@ -205,7 +217,8 @@ export type Block =
   | DividerBlock
   | VideoBlock
   | EmbedBlock
-  | ConnectorBlock;
+  | ConnectorBlock
+  | InkBlock;
 
 export type BlockType = Block['type'];
 
@@ -222,6 +235,7 @@ export interface Slide {
   notes?: string;
   transition?: SlideTransition;
   hidden?: boolean;
+  audio?: { src: string; mime: string; duration?: number; createdAt?: number };
 }
 
 export interface ThemeSpec {

@@ -678,6 +678,31 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+.live-preview {
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-soft);
+}
+.live-preview-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.live-preview-body {
+  padding: 0 10px 10px;
+  display: flex;
+  justify-content: center;
+}
+.live-preview-body .thumb-frame {
+  width: 100% !important;
+  max-width: 360px;
+  height: auto !important;
+  aspect-ratio: 16 / 9;
+}
+
 .chat-input .icon-btn { width: 36px; height: 36px; }
 .chat-input .icon-btn.confirm-send {
   background: var(--success);

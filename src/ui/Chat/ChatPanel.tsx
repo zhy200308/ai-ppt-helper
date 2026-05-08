@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Send, Paperclip, Square, X, AtSign, Sparkles, Check, Clock, Plus, Trash2, ChevronLeft,
+  Send, Paperclip, Square, X, AtSign, Sparkles, Check, Clock, Plus, Trash2, ChevronLeft, Eye, EyeOff,
 } from 'lucide-react';
 import { useDeckStore, useSelectedBlocks, useActiveSlide } from '../../core/store/deck';
 import { runChat, type ChatSessionMessage } from '../../ai/orchestrator';
 import { extractFile, type ExtractedFile } from '../../utils/files';
 import { isMac } from '../components/useBackdropClose';
+import { LivePreview } from './LivePreview';
 import {
   deleteChatSession,
   listChatSessionsByDeck,
@@ -41,6 +42,7 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
   const [includeContext, setIncludeContext] = useState(true);
   const macConfirm = isMac();
   const [confirmingSend, setConfirmingSend] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Bootstrap: pick latest session for this deck, or start a fresh one.
@@ -240,6 +242,9 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
           <>
             <span title={sessionTitle}><Sparkles size={14}/> {truncate(sessionTitle, 22)}</span>
             <span style={{ display: 'inline-flex', gap: 4 }}>
+              <button className="icon-btn" onClick={() => setShowPreview((v) => !v)} title="切换预览面板">
+                {showPreview ? <EyeOff size={14}/> : <Eye size={14}/>}
+              </button>
               <button className="icon-btn" onClick={() => setShowHistory(true)} title="历史会话">
                 <Clock size={14}/>
               </button>
@@ -264,6 +269,7 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
         />
       ) : (
         <>
+          {showPreview && messages.length > 0 && <LivePreview />}
           <div className="chat-body" ref={scrollRef}>
             {messages.length === 0 && <Empty />}
             {messages.map((m) => <MessageBubble key={m.id} msg={m} />)}

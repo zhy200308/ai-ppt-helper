@@ -1,11 +1,8 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Stage } from './canvas/Stage';
 import { SlideList } from './ui/LeftPanel/SlideList';
 import { RightPanel } from './ui/RightPanel/RightPanel';
 import { TopBar } from './ui/TopBar/TopBar';
-import { ChatPanel } from './ui/Chat/ChatPanel';
-import { SettingsPanel } from './ui/Settings/SettingsPanel';
-import { Presenter } from './ui/Presenter/Presenter';
 import { Splitter } from './ui/components/Splitter';
 import { useDeckStore } from './core/store/deck';
 import { useGlobalHotkeys } from './core/events/hotkeys';
@@ -13,6 +10,10 @@ import { useAutosave } from './core/persistence/autosave';
 import { useAutoSnapshots } from './core/persistence/snapshots';
 import { useUIStore } from './core/store/ui';
 import './styles/app.css';
+
+const ChatPanel = lazy(() => import('./ui/Chat/ChatPanel').then((m) => ({ default: m.ChatPanel })));
+const SettingsPanel = lazy(() => import('./ui/Settings/SettingsPanel').then((m) => ({ default: m.SettingsPanel })));
+const Presenter = lazy(() => import('./ui/Presenter/Presenter').then((m) => ({ default: m.Presenter })));
 
 export default function App() {
   useGlobalHotkeys();
@@ -49,16 +50,18 @@ export default function App() {
           <RightPanel />
         </aside>
         {showChat && (
-          <>
+          <Suspense fallback={<div style={{ width: chatWidth, background: '#fff', borderLeft: '1px solid #E2E8F0' }} />}>
             <Splitter side="right" width={chatWidth} onChange={setChatWidth} min={300} max={640} />
             <div style={{ width: chatWidth, display: 'flex', minHeight: 0 }}>
               <ChatPanel onClose={() => setChatVisible()} />
             </div>
-          </>
+          </Suspense>
         )}
       </div>
-      <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
-      {presenting && <Presenter onClose={() => setPresenting(false)} />}
+      <Suspense fallback={null}>
+        {showSettings && <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />}
+        {presenting && <Presenter onClose={() => setPresenting(false)} />}
+      </Suspense>
     </div>
   );
 }

@@ -38,6 +38,7 @@ export function useAutoSnapshots() {
 }
 
 export async function captureSnapshot(label: string, trigger: 'manual' | 'ai' = 'manual') {
+  if (typeof indexedDB === 'undefined') return;
   const deck = useDeckStore.getState().deck;
   await saveSnapshot({
     id: `snap_${deck.meta.id}_${Date.now().toString(36)}`,

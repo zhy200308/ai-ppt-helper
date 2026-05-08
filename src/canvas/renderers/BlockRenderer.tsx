@@ -6,6 +6,7 @@ import type {
   DividerBlock,
   IconBlock,
   ImageBlock,
+  InkBlock,
   ListBlock,
   ShapeBlock,
   TableBlock,
@@ -36,6 +37,7 @@ export const BlockRenderer = memo(function BlockRenderer({ block, presenting }: 
     case 'video': return <VideoRender block={block} presenting={presenting} />;
     case 'embed': return <EmbedRichRender block={block} />;
     case 'connector': return <ConnectorRender block={block} />;
+    case 'ink': return <InkRender block={block} />;
     default: return null;
   }
 });
@@ -430,6 +432,28 @@ function ConnectorRender({ block }: { block: ConnectorBlock }) {
         markerEnd={block.arrowEnd ? `url(#m-end-${block.id})` : undefined}
         markerStart={block.arrowStart ? `url(#m-start-${block.id})` : undefined}
       />
+    </svg>
+  );
+}
+
+function InkRender({ block }: { block: InkBlock }) {
+  return (
+    <svg width="100%" height="100%" viewBox={`0 0 ${block.w} ${block.h}`} preserveAspectRatio="none" style={{ pointerEvents: 'none' }}>
+      {block.strokes.map((s, i) => {
+        if (s.points.length < 2) return null;
+        const d = s.points.map((p, j) => (j === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
+        return (
+          <path
+            key={i}
+            d={d}
+            stroke={s.color}
+            strokeWidth={s.width}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        );
+      })}
     </svg>
   );
 }
