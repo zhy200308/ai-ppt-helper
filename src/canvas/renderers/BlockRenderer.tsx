@@ -3,11 +3,16 @@ import type {
   Block,
   ChartBlock,
   CodeBlock,
+  ConnectorBlock,
+  DividerBlock,
+  EmbedBlock,
   IconBlock,
   ImageBlock,
+  ListBlock,
   ShapeBlock,
   TableBlock,
   TextBlock,
+  VideoBlock,
 } from '../../core/schema/types';
 
 interface Props {
@@ -15,7 +20,7 @@ interface Props {
   presenting?: boolean;
 }
 
-export const BlockRenderer = memo(function BlockRenderer({ block }: Props) {
+export const BlockRenderer = memo(function BlockRenderer({ block, presenting }: Props) {
   switch (block.type) {
     case 'text': return <TextRender block={block} />;
     case 'shape': return <ShapeRender block={block} />;
@@ -24,6 +29,11 @@ export const BlockRenderer = memo(function BlockRenderer({ block }: Props) {
     case 'table': return <TableRender block={block} />;
     case 'code': return <CodeRender block={block} />;
     case 'icon': return <IconRender block={block} />;
+    case 'list': return <ListRender block={block} />;
+    case 'divider': return <DividerRender block={block} />;
+    case 'video': return <VideoRender block={block} presenting={presenting} />;
+    case 'embed': return <EmbedRender block={block} />;
+    case 'connector': return <ConnectorRender block={block} />;
     default: return null;
   }
 });
@@ -118,21 +128,10 @@ function ShapeRender({ block }: { block: ShapeBlock }) {
       />
     );
   }
-  // Use SVG for geometry-heavy shapes.
+  // SVG for geometry-heavy shapes.
+  const path = SHAPE_PATHS[block.shape];
   return (
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={baseStyle}>
-      {block.shape === 'triangle' && (
-        <polygon points="50,5 95,95 5,95" fill={fill} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} />
-      )}
-      {block.shape === 'star' && (
-        <polygon
-          points="50,5 61,38 95,38 67,58 78,90 50,70 22,90 33,58 5,38 39,38"
-          fill={fill}
-          stroke={stroke}
-          strokeWidth={sw}
-          strokeDasharray={dash}
-        />
-      )}
       {block.shape === 'line' && (
         <line x1="0" y1="50" x2="100" y2="50" stroke={stroke ?? '#000'} strokeWidth={sw || 2} strokeDasharray={dash} />
       )}
@@ -142,12 +141,35 @@ function ShapeRender({ block }: { block: ShapeBlock }) {
           <polygon points="100,50 80,40 80,60" fill={stroke ?? '#000'} />
         </g>
       )}
-      {block.shape === 'polygon' && (
-        <polygon points="50,5 95,30 80,90 20,90 5,30" fill={fill} stroke={stroke} strokeWidth={sw} />
+      {path && (
+        path.kind === 'polygon' ? (
+          <polygon points={path.d} fill={fill} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} />
+        ) : (
+          <path d={path.d} fill={fill} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} />
+        )
       )}
     </svg>
   );
 }
+
+// SVG path & polygon definitions used in 100x100 viewBox.
+const SHAPE_PATHS: Partial<Record<ShapeBlock['shape'], { kind: 'polygon' | 'path'; d: string }>> = {
+  triangle: { kind: 'polygon', d: '50,5 95,95 5,95' },
+  star: { kind: 'polygon', d: '50,5 61,38 95,38 67,58 78,90 50,70 22,90 33,58 5,38 39,38' },
+  polygon: { kind: 'polygon', d: '50,5 95,30 80,90 20,90 5,30' },
+  pentagon: { kind: 'polygon', d: '50,5 97,40 79,95 21,95 3,40' },
+  hexagon: { kind: 'polygon', d: '25,5 75,5 97,50 75,95 25,95 3,50' },
+  octagon: { kind: 'polygon', d: '30,5 70,5 95,30 95,70 70,95 30,95 5,70 5,30' },
+  parallelogram: { kind: 'polygon', d: '20,10 95,10 80,90 5,90' },
+  trapezoid: { kind: 'polygon', d: '20,10 80,10 95,90 5,90' },
+  rhombus: { kind: 'polygon', d: '50,5 95,50 50,95 5,50' },
+  cross: { kind: 'polygon', d: '35,5 65,5 65,35 95,35 95,65 65,65 65,95 35,95 35,65 5,65 5,35 35,35' },
+  chevron: { kind: 'polygon', d: '5,10 70,10 95,50 70,90 5,90 30,50' },
+  heart: { kind: 'path', d: 'M50 90 C 5 60, 5 25, 30 15 C 42 10, 50 25, 50 30 C 50 25, 58 10, 70 15 C 95 25, 95 60, 50 90 Z' },
+  cloud: { kind: 'path', d: 'M25 70 Q 5 70 10 50 Q 5 30 25 35 Q 30 15 50 25 Q 65 10 75 30 Q 95 30 90 50 Q 100 70 75 75 Q 60 90 40 80 Q 25 90 25 70 Z' },
+  callout: { kind: 'polygon', d: '5,5 95,5 95,75 60,75 50,95 50,75 5,75' },
+  'speech-bubble': { kind: 'path', d: 'M10 10 H 90 Q 95 10 95 15 V 65 Q 95 70 90 70 H 60 L 50 90 L 45 70 H 10 Q 5 70 5 65 V 15 Q 5 10 10 10 Z' },
+};
 
 function ImageRender({ block }: { block: ImageBlock }) {
   if (!block.src) {
@@ -328,6 +350,175 @@ function IconRender({ block }: { block: IconBlock }) {
     >
       ◇ {block.iconName}
     </div>
+  );
+}
+
+function ListRender({ block }: { block: ListBlock }) {
+  return (
+    <ol
+      style={{
+        margin: 0,
+        padding: 0,
+        width: '100%',
+        height: '100%',
+        boxSizing: 'border-box',
+        listStyle: 'none',
+        fontSize: block.fontSize ?? 28,
+        fontFamily: block.fontFamily,
+        color: block.color ?? '#0F172A',
+        lineHeight: block.lineHeight ?? 1.5,
+        overflow: 'hidden',
+      }}
+    >
+      {block.items.map((item, i) => {
+        const indent = (item.level || 0) * 24;
+        const marker = block.ordered
+          ? `${siblingIndex(block.items, i)}.`
+          : '•';
+        return (
+          <li
+            key={i}
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              paddingLeft: indent,
+              marginBottom: 6,
+            }}
+          >
+            <span style={{ color: block.bulletColor ?? block.color ?? '#4F46E5', minWidth: 18, fontWeight: block.ordered ? 600 : 400 }}>{marker}</span>
+            <span style={{ flex: 1 }}>{item.text}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function siblingIndex(items: ListBlock['items'], i: number): number {
+  let n = 0;
+  const lvl = items[i].level || 0;
+  for (let k = 0; k <= i; k++) {
+    if ((items[k].level || 0) === lvl) n++;
+    else if ((items[k].level || 0) < lvl) n = 0;
+  }
+  return n;
+}
+
+function DividerRender({ block }: { block: DividerBlock }) {
+  const t = block.thickness ?? 2;
+  const dash =
+    block.style === 'dashed' ? '12 8' : block.style === 'dotted' ? '2 8' : undefined;
+  return (
+    <svg width="100%" height="100%" preserveAspectRatio="none" viewBox={`0 0 100 ${Math.max(2, t)}`}>
+      <line
+        x1="0"
+        x2="100"
+        y1={t / 2}
+        y2={t / 2}
+        stroke={block.color ?? '#CBD5E1'}
+        strokeWidth={t}
+        strokeDasharray={dash}
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+
+function VideoRender({ block, presenting }: { block: VideoBlock; presenting?: boolean }) {
+  if (!block.src) {
+    return (
+      <div style={{ width: '100%', height: '100%', background: '#0F172A', color: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, borderRadius: block.cornerRadius }}>
+        Video placeholder
+      </div>
+    );
+  }
+  return (
+    <video
+      src={block.src}
+      poster={block.poster}
+      autoPlay={!!block.autoplay && presenting}
+      loop={block.loop}
+      controls={block.controls ?? presenting}
+      muted={!!block.autoplay}
+      playsInline
+      draggable={false}
+      style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: block.cornerRadius, pointerEvents: presenting ? 'auto' : 'none' }}
+    />
+  );
+}
+
+function EmbedRender({ block }: { block: EmbedBlock }) {
+  if (block.kind === 'iframe' && block.src) {
+    return (
+      <iframe
+        src={block.src}
+        title="embed"
+        sandbox="allow-scripts allow-same-origin allow-popups"
+        style={{ width: '100%', height: '100%', border: 0, borderRadius: block.cornerRadius, pointerEvents: 'none' }}
+      />
+    );
+  }
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        background: '#F1F5F9',
+        color: '#475569',
+        padding: 12,
+        boxSizing: 'border-box',
+        fontFamily: 'monospace',
+        fontSize: 13,
+        whiteSpace: 'pre-wrap',
+        overflow: 'auto',
+        borderRadius: block.cornerRadius,
+      }}
+    >
+      {block.fallback ?? `[${block.kind}] ${block.src}`}
+    </div>
+  );
+}
+
+function ConnectorRender({ block }: { block: ConnectorBlock }) {
+  // Coordinates are deck-space; the wrapper already positioned the block,
+  // so we draw inside its local rect and convert start/end to local coords.
+  const sx = block.start.x - block.x;
+  const sy = block.start.y - block.y;
+  const ex = block.end.x - block.x;
+  const ey = block.end.y - block.y;
+  const dash = block.strokeDash === 'dashed' ? '8 6' : block.strokeDash === 'dotted' ? '2 6' : undefined;
+  let d: string;
+  if (block.kind === 'straight') {
+    d = `M ${sx} ${sy} L ${ex} ${ey}`;
+  } else if (block.kind === 'elbow') {
+    d = `M ${sx} ${sy} L ${ex} ${sy} L ${ex} ${ey}`;
+  } else {
+    const cx = (sx + ex) / 2;
+    d = `M ${sx} ${sy} Q ${cx} ${sy} ${cx} ${(sy + ey) / 2} T ${ex} ${ey}`;
+  }
+  const stroke = block.color ?? '#475569';
+  const w = block.strokeWidth ?? 2;
+  return (
+    <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+      <defs>
+        <marker id={`m-end-${block.id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={stroke}/>
+        </marker>
+        <marker id={`m-start-${block.id}`} viewBox="0 0 10 10" refX="1" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={stroke}/>
+        </marker>
+      </defs>
+      <path
+        d={d}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={w}
+        strokeDasharray={dash}
+        markerEnd={block.arrowEnd ? `url(#m-end-${block.id})` : undefined}
+        markerStart={block.arrowStart ? `url(#m-start-${block.id})` : undefined}
+      />
+    </svg>
   );
 }
 

@@ -56,7 +56,19 @@ export type ShapeKind =
   | 'line'
   | 'arrow'
   | 'star'
-  | 'polygon';
+  | 'polygon'
+  | 'pentagon'
+  | 'hexagon'
+  | 'octagon'
+  | 'parallelogram'
+  | 'trapezoid'
+  | 'rhombus'
+  | 'cloud'
+  | 'heart'
+  | 'callout'
+  | 'speech-bubble'
+  | 'cross'
+  | 'chevron';
 
 export interface ShapeBlock extends BlockBase {
   type: 'shape';
@@ -123,6 +135,54 @@ export interface IconBlock extends BlockBase {
   strokeWidth?: number;
 }
 
+export interface ListBlock extends BlockBase {
+  type: 'list';
+  ordered: boolean;
+  items: { text: string; level: number }[];
+  fontSize?: number;
+  color?: RGBA;
+  fontFamily?: string;
+  lineHeight?: number;
+  bulletColor?: RGBA;
+}
+
+export interface DividerBlock extends BlockBase {
+  type: 'divider';
+  color?: RGBA;
+  thickness?: number;
+  style?: 'solid' | 'dashed' | 'dotted';
+}
+
+export interface VideoBlock extends BlockBase {
+  type: 'video';
+  src: string;
+  poster?: string;
+  autoplay?: boolean;
+  loop?: boolean;
+  controls?: boolean;
+  cornerRadius?: number;
+}
+
+export interface EmbedBlock extends BlockBase {
+  type: 'embed';
+  src: string;
+  kind: 'iframe' | 'mermaid' | 'math' | 'html';
+  fallback?: string;
+  cornerRadius?: number;
+}
+
+export interface ConnectorBlock extends BlockBase {
+  type: 'connector';
+  kind: 'straight' | 'elbow' | 'curve';
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  color?: RGBA;
+  strokeWidth?: number;
+  arrowStart?: boolean;
+  arrowEnd?: boolean;
+  strokeDash?: 'solid' | 'dashed' | 'dotted';
+}
+
 export type Block =
   | TextBlock
   | ShapeBlock
@@ -130,7 +190,12 @@ export type Block =
   | ChartBlock
   | TableBlock
   | CodeBlock
-  | IconBlock;
+  | IconBlock
+  | ListBlock
+  | DividerBlock
+  | VideoBlock
+  | EmbedBlock
+  | ConnectorBlock;
 
 export type BlockType = Block['type'];
 

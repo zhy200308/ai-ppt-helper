@@ -33,18 +33,21 @@
 }
 
 .app-body {
-  display: grid;
-  grid-template-columns: 240px 1fr 280px auto;
+  display: flex;
   flex: 1;
   min-height: 0;
 }
-
-@media (max-width: 1100px) {
-  .app-body { grid-template-columns: 200px 1fr 240px auto; }
+.app-body .left-pane,
+.app-body .right-pane {
+  flex-shrink: 0;
+}
+.app-body .center-pane {
+  flex: 1;
+  min-width: 0;
 }
 @media (max-width: 880px) {
-  .app-body { grid-template-columns: 160px 1fr; }
-  .right-pane { display: none; }
+  .app-body .right-pane { display: none; }
+  .app-body .splitter-right { display: none; }
 }
 
 /* ============================================================
@@ -213,10 +216,11 @@
   right: 4px;
   display: flex;
   gap: 2px;
-  opacity: 0;
-  transition: opacity 0.15s;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 4px;
+  padding: 1px;
+  backdrop-filter: blur(2px);
 }
-.slide-thumb:hover .thumb-actions { opacity: 1; }
 
 /* ============================================================
    Center pane (Stage)
@@ -675,8 +679,119 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .chat-input .icon-btn { width: 36px; height: 36px; }
+.chat-input .icon-btn.confirm-send {
+  background: var(--success);
+  animation: pulse-confirm 1.2s ease-in-out infinite;
+}
+@keyframes pulse-confirm {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
 
 /* ============================================================
    Misc
    ============================================================ */
 .field-label svg { vertical-align: middle; margin-left: 4px; opacity: 0.6; }
+
+/* ============================================================
+   Splitter
+   ============================================================ */
+.splitter {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+.splitter:hover, .splitter:active { background: var(--accent-soft); }
+.splitter::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 1px;
+  background: var(--border-subtle);
+}
+.splitter:hover::after { background: var(--accent); }
+
+/* ============================================================
+   Insert "+" dropdown
+   ============================================================ */
+.insert-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  padding: 4px;
+  min-width: 160px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.insert-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  text-align: left;
+  color: var(--text-default);
+}
+.insert-menu button:hover { background: var(--bg-soft); }
+
+/* ============================================================
+   Project & chat history sidebars
+   ============================================================ */
+.project-list-overlay, .chat-history-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-panel);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.project-list-header, .chat-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.project-row, .chat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.project-row:hover, .chat-row:hover { background: var(--bg-soft); }
+.project-row.active, .chat-row.active { background: var(--accent-soft); }
+.project-row-info, .chat-row-info {
+  flex: 1;
+  min-width: 0;
+}
+.project-row-title, .chat-row-title {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-row-meta, .chat-row-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}

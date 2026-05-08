@@ -1,12 +1,17 @@
 import { nanoid } from 'nanoid';
 import type {
   Block,
+  ConnectorBlock,
   Deck,
+  DividerBlock,
+  EmbedBlock,
   ImageBlock,
+  ListBlock,
   ShapeBlock,
   Slide,
   TextBlock,
   ThemeSpec,
+  VideoBlock,
 } from './types';
 
 export const DEFAULT_THEME: ThemeSpec = {
@@ -59,6 +64,97 @@ export function createShapeBlock(partial: Partial<ShapeBlock> = {}): ShapeBlock 
     h: 240,
     fill: '#4F46E5',
     cornerRadius: 12,
+    ...partial,
+  };
+}
+
+export function createListBlock(partial: Partial<ListBlock> = {}): ListBlock {
+  return {
+    id: newId('blk'),
+    type: 'list',
+    z: 1,
+    x: 200,
+    y: 300,
+    w: 1200,
+    h: 500,
+    ordered: false,
+    items: [
+      { text: '第一点 — 概述要点', level: 0 },
+      { text: '第二点 — 关键支撑', level: 0 },
+      { text: '第三点 — 行动建议', level: 0 },
+    ],
+    fontSize: 32,
+    color: '#0F172A',
+    bulletColor: '#4F46E5',
+    lineHeight: 1.5,
+    ...partial,
+  };
+}
+
+export function createDividerBlock(partial: Partial<DividerBlock> = {}): DividerBlock {
+  return {
+    id: newId('blk'),
+    type: 'divider',
+    z: 1,
+    x: 200,
+    y: 540,
+    w: 1520,
+    h: 4,
+    color: '#CBD5E1',
+    thickness: 2,
+    style: 'solid',
+    ...partial,
+  };
+}
+
+export function createVideoBlock(partial: Partial<VideoBlock> = {}): VideoBlock {
+  return {
+    id: newId('blk'),
+    type: 'video',
+    z: 1,
+    x: 300,
+    y: 200,
+    w: 1280,
+    h: 720,
+    src: '',
+    controls: true,
+    cornerRadius: 8,
+    ...partial,
+  };
+}
+
+export function createEmbedBlock(partial: Partial<EmbedBlock> = {}): EmbedBlock {
+  return {
+    id: newId('blk'),
+    type: 'embed',
+    z: 1,
+    x: 300,
+    y: 200,
+    w: 1000,
+    h: 600,
+    src: '',
+    kind: 'iframe',
+    fallback: 'Iframe embed — set src to enable preview.',
+    cornerRadius: 8,
+    ...partial,
+  };
+}
+
+export function createConnectorBlock(partial: Partial<ConnectorBlock> = {}): ConnectorBlock {
+  return {
+    id: newId('blk'),
+    type: 'connector',
+    kind: 'straight',
+    z: 1,
+    x: 200,
+    y: 400,
+    w: 600,
+    h: 200,
+    start: { x: 200, y: 500 },
+    end: { x: 800, y: 500 },
+    color: '#475569',
+    strokeWidth: 3,
+    arrowEnd: true,
     ...partial,
   };
 }
