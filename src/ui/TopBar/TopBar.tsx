@@ -9,9 +9,7 @@ import {
   createConnectorBlock, createDividerBlock, createEmbedBlock, createImageBlock,
   createListBlock, createShapeBlock, createTextBlock, createVideoBlock, newId,
 } from '../../core/schema/factory';
-import { exportPptx } from '../../export/pptx';
-import { exportPng } from '../../export/png';
-import { exportPdf } from '../../export/pdf';
+import { useI18n } from '../../i18n';
 import { useEffect, useRef } from 'react';
 
 interface Props {
@@ -103,8 +101,20 @@ export function TopBar({ onToggleSettings, onToggleChat }: Props) {
 
   const handleExportPptx = async () => {
     setExporting(true);
-    try { await exportPptx(useDeckStore.getState().deck); }
-    finally { setExporting(false); }
+    try {
+      const { exportPptx } = await import('../../export/pptx');
+      await exportPptx(useDeckStore.getState().deck);
+    } finally { setExporting(false); }
+  };
+
+  const handleExportPdf = async () => {
+    const { exportPdf } = await import('../../export/pdf');
+    await exportPdf(useDeckStore.getState().deck);
+  };
+
+  const handleExportPng = async () => {
+    const { exportPng } = await import('../../export/png');
+    await exportPng(useDeckStore.getState().deck);
   };
 
   return (
@@ -152,14 +162,26 @@ export function TopBar({ onToggleSettings, onToggleChat }: Props) {
         <button className="btn-sm btn-primary" onClick={handleExportPptx} disabled={exporting}>
           <Download size={14}/> {exporting ? '导出中…' : '导出 PPTX'}
         </button>
-        <button className="btn-sm" onClick={() => exportPdf(useDeckStore.getState().deck)}>
-          PDF
-        </button>
-        <button className="btn-sm" onClick={() => exportPng(useDeckStore.getState().deck)}>
-          PNG
-        </button>
+        <button className="btn-sm" onClick={handleExportPdf}>PDF</button>
+        <button className="btn-sm" onClick={handleExportPng}>PNG</button>
+        <LangSwitcher />
         <button className="icon-btn" onClick={onToggleSettings} title="设置"><SettingsIcon size={14}/></button>
       </div>
     </div>
+  );
+}
+
+function LangSwitcher() {
+  const locale = useI18n((s) => s.locale);
+  const setLocale = useI18n((s) => s.setLocale);
+  return (
+    <button
+      className="btn-sm"
+      onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
+      title="Language / 语言"
+      style={{ fontVariant: 'small-caps' }}
+    >
+      {locale === 'zh' ? 'EN' : '中文'}
+    </button>
   );
 }

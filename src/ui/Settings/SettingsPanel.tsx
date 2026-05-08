@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { X, Server, Globe, Paintbrush, Wrench } from 'lucide-react';
+import { X, Server, Globe, Paintbrush, Wrench, Users, ShieldCheck } from 'lucide-react';
 import { useSettingsStore } from '../../core/store/settings';
 import { ProvidersSection } from './ProvidersSection';
 import { ProxySection } from './ProxySection';
 import { ThemesSection } from './ThemesSection';
 import { SkillsSection } from './SkillsSection';
+import { CollabSection } from './CollabSection';
+import { AuditSection } from './AuditSection';
 import { useBackdropClose } from '../components/useBackdropClose';
 
 interface Props {
@@ -12,7 +14,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = 'providers' | 'proxy' | 'themes' | 'skills';
+type Tab = 'providers' | 'proxy' | 'themes' | 'skills' | 'collab' | 'audit';
 
 export function SettingsPanel({ open, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('providers');
@@ -49,6 +51,12 @@ export function SettingsPanel({ open, onClose }: Props) {
             <button className={tab === 'skills' ? 'active' : ''} onClick={() => setTab('skills')}>
               <Wrench size={14}/> 技能
             </button>
+            <button className={tab === 'collab' ? 'active' : ''} onClick={() => setTab('collab')}>
+              <Users size={14}/> 协同
+            </button>
+            <button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}>
+              <ShieldCheck size={14}/> 导出审计
+            </button>
             <button className={tab === 'proxy' ? 'active' : ''} onClick={() => setTab('proxy')}>
               <Globe size={14}/> 网络代理
             </button>
@@ -57,6 +65,8 @@ export function SettingsPanel({ open, onClose }: Props) {
             {tab === 'providers' && <ProvidersSection />}
             {tab === 'themes' && <ThemesSection />}
             {tab === 'skills' && <SkillsSection />}
+            {tab === 'collab' && <CollabSection />}
+            {tab === 'audit' && <AuditSection />}
             {tab === 'proxy' && <ProxySection />}
           </main>
         </div>

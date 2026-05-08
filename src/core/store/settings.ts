@@ -30,6 +30,8 @@ export interface ImportedTheme {
   fontFamilyBody: string;
   source: 'pptx' | 'zip' | 'manual';
   importedAt: number;
+  // Optional layout hints captured from a PPTX import.
+  layouts?: { name: string; type: string; placeholders: { type: string; x: number; y: number; w: number; h: number }[] }[];
 }
 
 export interface SettingsActions {

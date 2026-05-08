@@ -3,7 +3,9 @@
 
 import { newId } from '../core/schema/factory';
 import type { Block } from '../core/schema/types';
-import type { LayoutContext, LayoutTemplate, SlideContent } from './types';
+import type { LayoutContext, LayoutTemplate as Tpl, SlideContent } from './types';
+type LayoutTemplate = Tpl;
+export type { LayoutTemplate };
 import { bestForeground, contrastRatio } from '../themes/colorIntelligence';
 
 const PAD_X = 160;        // outer horizontal margin
