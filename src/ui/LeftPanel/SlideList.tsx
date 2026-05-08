@@ -1,8 +1,9 @@
 import { memo, useState } from 'react';
-import { Plus, Copy, Trash2, GripVertical } from 'lucide-react';
+import { Plus, Copy, Trash2, GripVertical, FolderOpen } from 'lucide-react';
 import { useDeckStore } from '../../core/store/deck';
 import type { Slide } from '../../core/schema/types';
 import { ThumbnailRender } from './ThumbnailRender';
+import { ProjectList } from './ProjectList';
 
 export function SlideList() {
   const slides = useDeckStore((s) => s.deck.slides);
@@ -13,11 +14,22 @@ export function SlideList() {
   const removeSlide = useDeckStore((s) => s.removeSlide);
   const reorderSlides = useDeckStore((s) => s.reorderSlides);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [showProjects, setShowProjects] = useState(false);
 
   return (
-    <div className="slide-list">
+    <div className="slide-list" style={{ position: 'relative' }}>
+      {showProjects && <ProjectList onClose={() => setShowProjects(false)} />}
       <div className="slide-list-header">
-        <span>幻灯片 ({slides.length})</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <button
+            className="icon-btn xs"
+            onClick={() => setShowProjects(true)}
+            title="项目历史"
+          >
+            <FolderOpen size={12}/>
+          </button>
+          幻灯片 ({slides.length})
+        </span>
         <button className="icon-btn" onClick={() => addSlide()} title="添加幻灯片">
           <Plus size={14} />
         </button>

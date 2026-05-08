@@ -2,15 +2,53 @@ import { useState } from 'react';
 import {
   Undo2, Redo2, Plus, Type, Square, Image as ImgIcon, BarChart3, Table2,
   Play, Download, Settings as SettingsIcon, MessageSquare, Save,
+  List, Minus, Video, Code2, Link2, ChevronDown,
 } from 'lucide-react';
 import { useDeckStore } from '../../core/store/deck';
-import { createImageBlock, createShapeBlock, createTextBlock } from '../../core/schema/factory';
+import {
+  createConnectorBlock, createDividerBlock, createEmbedBlock, createImageBlock,
+  createListBlock, createShapeBlock, createTextBlock, createVideoBlock, newId,
+} from '../../core/schema/factory';
 import { exportPptx } from '../../export/pptx';
 import { exportPng } from '../../export/png';
+import { useEffect, useRef } from 'react';
 
 interface Props {
   onToggleSettings: () => void;
   onToggleChat: () => void;
+}
+
+type InsertKind =
+  | 'text' | 'shape' | 'image' | 'chart' | 'table'
+  | 'list-bullet' | 'list-number' | 'divider' | 'video' | 'embed' | 'code' | 'connector';
+
+function InsertMore({ onInsert }: { onInsert: (k: InsertKind) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
+      <button className="icon-btn" title="更多组件" onClick={() => setOpen((v) => !v)}>
+        <Plus size={14}/>
+      </button>
+      {open && (
+        <div className="insert-menu">
+          <button onClick={() => { onInsert('list-number'); setOpen(false); }}><List size={12}/> 有序列表</button>
+          <button onClick={() => { onInsert('connector'); setOpen(false); }}><Link2 size={12}/> 连接线</button>
+          <button onClick={() => { onInsert('video'); setOpen(false); }}><Video size={12}/> 视频</button>
+          <button onClick={() => { onInsert('embed'); setOpen(false); }}><Link2 size={12}/> 嵌入网页</button>
+          <button onClick={() => { onInsert('code'); setOpen(false); }}><Code2 size={12}/> 代码块</button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function TopBar({ onToggleSettings, onToggleChat }: Props) {
@@ -29,18 +67,34 @@ export function TopBar({ onToggleSettings, onToggleChat }: Props) {
   const setDeckTitle = useDeckStore((s) => s.setDeckTitle);
   const [exporting, setExporting] = useState(false);
 
-  const insert = (kind: 'text' | 'shape' | 'image' | 'chart' | 'table') => {
+  const insert = (
+    kind:
+      | 'text' | 'shape' | 'image' | 'chart' | 'table'
+      | 'list-bullet' | 'list-number' | 'divider' | 'video' | 'embed' | 'code' | 'connector',
+  ) => {
     if (!slideId) return;
     if (kind === 'text') addBlock(slideId, createTextBlock());
     else if (kind === 'shape') addBlock(slideId, createShapeBlock());
     else if (kind === 'image') addBlock(slideId, createImageBlock());
+    else if (kind === 'list-bullet') addBlock(slideId, createListBlock({ ordered: false }));
+    else if (kind === 'list-number') addBlock(slideId, createListBlock({ ordered: true }));
+    else if (kind === 'divider') addBlock(slideId, createDividerBlock());
+    else if (kind === 'video') addBlock(slideId, createVideoBlock());
+    else if (kind === 'embed') addBlock(slideId, createEmbedBlock());
+    else if (kind === 'connector') addBlock(slideId, createConnectorBlock());
     else if (kind === 'chart') addBlock(slideId, {
-      id: `blk_${Math.random().toString(36).slice(2, 12)}`,
+      id: newId('blk'),
       type: 'chart', chart: 'bar', z: 1, x: 300, y: 200, w: 800, h: 500,
       series: [{ name: 'Series A', data: [12, 19, 7, 15, 20] }], categories: ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'],
     } as any);
+    else if (kind === 'code') addBlock(slideId, {
+      id: newId('blk'), type: 'code', z: 1, x: 240, y: 220, w: 1440, h: 600,
+      language: 'typescript',
+      theme: 'dark',
+      code: '// Edit me\nconst greet = (name: string) => `Hello, ${name}!`;\nconsole.log(greet("AI PPT"));',
+    } as any);
     else if (kind === 'table') addBlock(slideId, {
-      id: `blk_${Math.random().toString(36).slice(2, 12)}`,
+      id: newId('blk'),
       type: 'table', rows: 3, cols: 3, headerRow: true, z: 1, x: 300, y: 200, w: 800, h: 400,
       cells: [['标题', '描述', '值'], ['一', '示例', '10'], ['二', '示例', '20']],
     } as any);
@@ -74,8 +128,12 @@ export function TopBar({ onToggleSettings, onToggleChat }: Props) {
         <button className="icon-btn" title="文本 (T)" onClick={() => insert('text')}><Type size={14}/></button>
         <button className="icon-btn" title="形状 (R)" onClick={() => insert('shape')}><Square size={14}/></button>
         <button className="icon-btn" title="图片" onClick={() => insert('image')}><ImgIcon size={14}/></button>
+        <button className="icon-btn" title="无序列表" onClick={() => insert('list-bullet')}><List size={14}/></button>
+        <button className="icon-btn" title="分隔线" onClick={() => insert('divider')}><Minus size={14}/></button>
         <button className="icon-btn" title="图表" onClick={() => insert('chart')}><BarChart3 size={14}/></button>
         <button className="icon-btn" title="表格" onClick={() => insert('table')}><Table2 size={14}/></button>
+        <InsertMore onInsert={insert} />
+        <ChevronDown size={11} style={{ opacity: 0.4 }}/>
         <span className="sep" />
         <span className="zoom-label">{Math.round(zoom * 100)}%</span>
         <button className="icon-btn" onClick={() => setZoom(zoom / 1.2)} title="缩小">−</button>
