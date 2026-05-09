@@ -110,6 +110,18 @@ export interface ChartBlock extends BlockBase {
   series: { name: string; data: number[] }[];
   categories?: string[];
   options?: Record<string, unknown>;
+  // When set, the chart pulls its categories + series from a deck-level
+  // data table at render time. Inline series/categories are ignored.
+  dataRef?: ChartDataRef;
+}
+
+export interface ChartDataRef {
+  tableId: ID;
+  // The column to use as the x-axis labels.
+  xColumn: string;
+  // Each y column becomes one series. If omitted, every numeric column
+  // other than the x-column is plotted.
+  yColumns?: string[];
 }
 
 export interface TableBlock extends BlockBase {
@@ -119,6 +131,60 @@ export interface TableBlock extends BlockBase {
   cells: string[][]; // [row][col]
   headerRow?: boolean;
   headerCol?: boolean;
+  // When set, cells/rows/cols are derived from the referenced data table.
+  dataRef?: { tableId: ID; columns?: string[] };
+}
+
+export interface ProgressBlock extends BlockBase {
+  type: 'progress';
+  value: number;        // 0..1
+  label?: string;
+  showValue?: boolean;
+  color?: RGBA;
+  trackColor?: RGBA;
+  thickness?: number;
+}
+
+export interface KpiCardBlock extends BlockBase {
+  type: 'kpi';
+  label: string;
+  value: string;
+  delta?: string;       // e.g. "+12%"
+  deltaTone?: 'up' | 'down' | 'neutral';
+  sub?: string;
+  color?: RGBA;
+}
+
+export interface GalleryBlock extends BlockBase {
+  type: 'gallery';
+  images: { src: string; caption?: string }[];
+  columns?: number;     // 2..6
+  gap?: number;
+  cornerRadius?: number;
+}
+
+export interface MathBlock extends BlockBase {
+  type: 'math';
+  latex: string;
+  display?: boolean;    // displayMode (centered, larger)
+  color?: RGBA;
+  fontSize?: number;
+}
+
+export interface AudioBlock extends BlockBase {
+  type: 'audio';
+  src: string;
+  controls?: boolean;
+  loop?: boolean;
+  caption?: string;
+}
+
+export interface BadgeBlock extends BlockBase {
+  type: 'badge';
+  text: string;
+  variant?: 'solid' | 'soft' | 'outline';
+  color?: RGBA;
+  textColor?: RGBA;
 }
 
 export interface CodeBlock extends BlockBase {
@@ -218,7 +284,13 @@ export type Block =
   | VideoBlock
   | EmbedBlock
   | ConnectorBlock
-  | InkBlock;
+  | InkBlock
+  | ProgressBlock
+  | KpiCardBlock
+  | GalleryBlock
+  | MathBlock
+  | AudioBlock
+  | BadgeBlock;
 
 export type BlockType = Block['type'];
 
@@ -263,10 +335,27 @@ export interface DeckMeta {
   height: number;
 }
 
+export interface DataColumn {
+  key: string;          // unique id within the table
+  label: string;
+  type: 'string' | 'number' | 'date';
+}
+
+export interface DataTable {
+  id: ID;
+  name: string;
+  columns: DataColumn[];
+  rows: Record<string, string | number>[];
+  source?: string;      // optional provenance hint (e.g. "AI", filename)
+  updatedAt: number;
+}
+
 export interface Deck {
   meta: DeckMeta;
   theme: ThemeSpec;
   slides: Slide[];
+  // Reusable data tables that chart/table blocks can reference by id.
+  dataTables?: Record<ID, DataTable>;
 }
 
 export type SelectionRef =

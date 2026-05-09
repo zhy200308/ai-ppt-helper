@@ -1,5 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import type { ChartBlock } from '../../core/schema/types';
+import { useDeckStore } from '../../core/store/deck';
+import { resolveChartFromTable } from '../dataResolver';
 
 // Lazy-load ECharts at runtime. Wrapped in try/catch so a missing
 // install (developer forgot `npm install`) shows a placeholder instead
@@ -8,6 +10,8 @@ export const EChartsRender = memo(function EChartsRender({ block }: { block: Cha
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const deck = useDeckStore((s) => s.deck);
+  const resolved = resolveChartFromTable(block, deck);
 
   useEffect(() => {
     let disposed = false;
@@ -21,7 +25,7 @@ export const EChartsRender = memo(function EChartsRender({ block }: { block: Cha
         if (disposed || !ref.current) return;
         const inst = echarts.init(ref.current);
         chartRef.current = inst;
-        inst.setOption(buildOption(block));
+        inst.setOption(buildOption(block, resolved));
         resizeObs = new ResizeObserver(() => inst.resize());
         resizeObs.observe(ref.current);
       } catch (e) {
@@ -42,8 +46,8 @@ export const EChartsRender = memo(function EChartsRender({ block }: { block: Cha
   }, []);
 
   useEffect(() => {
-    if (chartRef.current) chartRef.current.setOption(buildOption(block), { notMerge: true });
-  }, [block]);
+    if (chartRef.current) chartRef.current.setOption(buildOption(block, resolved), { notMerge: true });
+  }, [block, resolved]);
 
   if (error) {
     return (
@@ -55,12 +59,13 @@ export const EChartsRender = memo(function EChartsRender({ block }: { block: Cha
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />;
 });
 
-function buildOption(block: ChartBlock): any {
+function buildOption(block: ChartBlock, resolved: { categories: string[]; series: { name: string; data: number[] }[] }): any {
   const colors = ['#4F46E5', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
-  const categories = block.categories ?? block.series[0]?.data.map((_, i) => `${i + 1}`) ?? [];
+  const categories = resolved.categories;
+  const seriesData = resolved.series;
 
   if (block.chart === 'pie') {
-    const data = (block.series[0]?.data ?? []).map((v, i) => ({
+    const data = (seriesData[0]?.data ?? []).map((v, i) => ({
       value: v,
       name: categories[i] ?? `${i + 1}`,
     }));
@@ -78,7 +83,7 @@ function buildOption(block: ChartBlock): any {
     };
   }
 
-  const series = block.series.map((s, i) => ({
+  const series = seriesData.map((s, i) => ({
     name: s.name,
     type: block.chart === 'area' ? 'line' : block.chart,
     smooth: block.chart === 'line' || block.chart === 'area',
@@ -92,7 +97,7 @@ function buildOption(block: ChartBlock): any {
     color: colors,
     grid: { left: 36, right: 16, top: 32, bottom: 36, containLabel: true },
     tooltip: { trigger: block.chart === 'scatter' ? 'item' : 'axis' },
-    legend: block.series.length > 1 ? { top: 0 } : undefined,
+    legend: seriesData.length > 1 ? { top: 0 } : undefined,
     xAxis: block.chart === 'scatter' ? { type: 'value' } : { type: 'category', data: categories, boundaryGap: block.chart !== 'line' && block.chart !== 'area' },
     yAxis: { type: 'value' },
     series,

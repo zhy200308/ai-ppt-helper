@@ -1,13 +1,19 @@
 import { memo } from 'react';
 import type {
+  AudioBlock,
+  BadgeBlock,
   Block,
   CodeBlock,
   ConnectorBlock,
   DividerBlock,
+  GalleryBlock,
   IconBlock,
   ImageBlock,
   InkBlock,
+  KpiCardBlock,
   ListBlock,
+  MathBlock,
+  ProgressBlock,
   ShapeBlock,
   TableBlock,
   TextBlock,
@@ -15,8 +21,10 @@ import type {
 } from '../../core/schema/types';
 import { EChartsRender } from './EChartsRender';
 import { EmbedRichRender } from './EmbedRichRender';
-import { useActiveSlide } from '../../core/store/deck';
+import { useActiveSlide, useDeckStore } from '../../core/store/deck';
 import { resolveEndpoint } from '../connectorAnchor';
+import { resolveTableFromRef } from '../dataResolver';
+import { useEffect, useRef, useState } from 'react';
 
 interface Props {
   block: Block;
@@ -38,6 +46,12 @@ export const BlockRenderer = memo(function BlockRenderer({ block, presenting }: 
     case 'embed': return <EmbedRichRender block={block} />;
     case 'connector': return <ConnectorRender block={block} />;
     case 'ink': return <InkRender block={block} />;
+    case 'progress': return <ProgressRender block={block} />;
+    case 'kpi': return <KpiCardRender block={block} />;
+    case 'gallery': return <GalleryRender block={block} />;
+    case 'math': return <MathRender block={block} />;
+    case 'audio': return <AudioRender block={block} presenting={presenting} />;
+    case 'badge': return <BadgeRender block={block} />;
     default: return null;
   }
 });
@@ -222,34 +236,95 @@ function ImageRender({ block }: { block: ImageBlock }) {
 }
 
 function TableRender({ block }: { block: TableBlock }) {
+  const deck = useDeckStore((s) => s.deck);
+  const slideId = useDeckStore((s) => s.selection.slideId);
+  const updateBlock = useDeckStore((s) => s.updateBlock);
+  const resolved = resolveTableFromRef(block, deck);
+  const isReadOnlyData = !!block.dataRef;
+
+  const onCellCommit = (ri: number, ci: number, value: string) => {
+    if (isReadOnlyData) return;
+    if (!slideId) return;
+    const next = resolved.cells.map((row) => row.slice());
+    next[ri][ci] = value;
+    updateBlock(slideId, block.id, { cells: next, rows: next.length, cols: next[0]?.length ?? 0 });
+  };
+
   return (
-    <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', overflow: 'auto' }}>
       <table style={{ width: '100%', height: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <tbody>
-          {block.cells.map((row, ri) => (
+          {resolved.cells.map((row, ri) => (
             <tr key={ri}>
               {row.map((cell, ci) => {
-                const isHeader = (block.headerRow && ri === 0) || (block.headerCol && ci === 0);
+                const isHeader = (resolved.headerRow && ri === 0) || (resolved.headerCol && ci === 0);
                 return (
-                  <td
+                  <Cell
                     key={ci}
-                    style={{
-                      border: '1px solid #CBD5E1',
-                      padding: 6,
-                      fontSize: 14,
-                      fontWeight: isHeader ? 600 : 400,
-                      background: isHeader ? '#F1F5F9' : undefined,
-                    }}
-                  >
-                    {cell}
-                  </td>
+                    value={cell}
+                    isHeader={isHeader}
+                    readOnly={isReadOnlyData}
+                    onCommit={(v) => onCellCommit(ri, ci, v)}
+                  />
                 );
               })}
             </tr>
           ))}
         </tbody>
       </table>
+      {isReadOnlyData && (
+        <div style={{
+          position: 'absolute', bottom: 4, right: 8,
+          fontSize: 10, color: '#94A3B8', background: 'rgba(255,255,255,0.85)',
+          padding: '1px 6px', borderRadius: 3, pointerEvents: 'none',
+        }}>
+          🔗 引用数据表
+        </div>
+      )}
     </div>
+  );
+}
+
+function Cell({ value, isHeader, readOnly, onCommit }: {
+  value: string; isHeader: boolean; readOnly: boolean; onCommit: (v: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+  useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
+  return (
+    <td
+      onDoubleClick={() => !readOnly && setEditing(true)}
+      style={{
+        border: '1px solid #CBD5E1',
+        padding: 0,
+        fontSize: 14,
+        fontWeight: isHeader ? 600 : 400,
+        background: isHeader ? '#F1F5F9' : undefined,
+        cursor: readOnly ? 'default' : 'text',
+        position: 'relative',
+      }}
+    >
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => { setEditing(false); onCommit(draft); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); setEditing(false); onCommit(draft); }
+            else if (e.key === 'Escape') { setEditing(false); setDraft(value); }
+          }}
+          style={{
+            width: '100%', height: '100%', padding: 6, border: 'none',
+            outline: '2px solid #4F46E5', font: 'inherit', background: '#fff',
+          }}
+        />
+      ) : (
+        <div style={{ padding: 6, minHeight: 20 }}>{value}</div>
+      )}
+    </td>
   );
 }
 
@@ -434,6 +509,148 @@ function ConnectorRender({ block }: { block: ConnectorBlock }) {
       />
     </svg>
   );
+}
+
+function ProgressRender({ block }: { block: ProgressBlock }) {
+  const v = Math.max(0, Math.min(1, block.value));
+  const t = block.thickness ?? 12;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', width: '100%', height: '100%', gap: 8 }}>
+      {(block.label || block.showValue) && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          {block.label && <span style={{ fontSize: 18, color: '#0F172A' }}>{block.label}</span>}
+          {block.showValue && <span style={{ fontSize: 22, fontWeight: 600, color: block.color ?? '#4F46E5' }}>{Math.round(v * 100)}%</span>}
+        </div>
+      )}
+      <div style={{ width: '100%', height: t, background: block.trackColor ?? '#E2E8F0', borderRadius: t / 2, overflow: 'hidden' }}>
+        <div style={{ width: `${v * 100}%`, height: '100%', background: block.color ?? '#4F46E5', transition: 'width .25s' }}/>
+      </div>
+    </div>
+  );
+}
+
+function KpiCardRender({ block }: { block: KpiCardBlock }) {
+  const tone = block.deltaTone ?? 'neutral';
+  const deltaColor = tone === 'up' ? '#10B981' : tone === 'down' ? '#EF4444' : '#64748B';
+  return (
+    <div style={{
+      width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+      justifyContent: 'center', padding: 24, boxSizing: 'border-box',
+      borderRadius: 16, background: '#fff', border: '1px solid #E2E8F0',
+      boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
+    }}>
+      <div style={{ fontSize: 14, color: '#64748B', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 }}>{block.label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 96, lineHeight: 1, fontWeight: 700, color: block.color ?? '#0F172A' }}>{block.value}</div>
+        {block.delta && (
+          <div style={{ fontSize: 24, fontWeight: 600, color: deltaColor }}>
+            {tone === 'up' ? '▲' : tone === 'down' ? '▼' : ''} {block.delta}
+          </div>
+        )}
+      </div>
+      {block.sub && <div style={{ fontSize: 16, color: '#94A3B8', marginTop: 12 }}>{block.sub}</div>}
+    </div>
+  );
+}
+
+function GalleryRender({ block }: { block: GalleryBlock }) {
+  const cols = Math.max(1, Math.min(6, block.columns ?? 3));
+  const gap = block.gap ?? 16;
+  const r = block.cornerRadius ?? 8;
+  if (block.images.length === 0) {
+    return (
+      <div style={{ width: '100%', height: '100%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', borderRadius: r }}>
+        Gallery — 添加图片
+      </div>
+    );
+  }
+  return (
+    <div style={{ width: '100%', height: '100%', display: 'grid', gap, gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+      {block.images.map((img, i) => (
+        <div key={i} style={{ position: 'relative', borderRadius: r, overflow: 'hidden', background: '#E2E8F0' }}>
+          {img.src && <img src={img.src} alt={img.caption ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} draggable={false}/>}
+          {img.caption && (
+            <div style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0,
+              padding: '6px 8px', fontSize: 12, color: '#fff',
+              background: 'linear-gradient(transparent, rgba(0,0,0,0.55))',
+            }}>{img.caption}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MathRender({ block }: { block: MathBlock }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const katex = (await import(/* @vite-ignore */ 'katex')).default;
+        await import(/* @vite-ignore */ 'katex/dist/katex.min.css');
+        if (cancelled || !ref.current) return;
+        ref.current.innerHTML = katex.renderToString(block.latex, {
+          throwOnError: false,
+          displayMode: block.display !== false,
+        });
+      } catch (e) {
+        if (!cancelled) {
+          const m = e instanceof Error ? e.message : String(e);
+          setError(/cannot find|Failed to (resolve|fetch)/i.test(m)
+            ? '未安装 katex' : m);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [block.latex, block.display]);
+  if (error) return <div style={{ color: '#EF4444', padding: 8, fontSize: 12 }}>{error}</div>;
+  return (
+    <div
+      ref={ref}
+      style={{
+        width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: block.color ?? '#0F172A', fontSize: block.fontSize ?? 36,
+      }}
+    />
+  );
+}
+
+function AudioRender({ block, presenting }: { block: AudioBlock; presenting?: boolean }) {
+  if (!block.src) {
+    return (
+      <div style={{ width: '100%', height: '100%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', borderRadius: 8 }}>
+        Audio — 设置 src 或选取文件
+      </div>
+    );
+  }
+  return (
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
+      <audio
+        src={block.src}
+        controls={block.controls ?? true}
+        loop={block.loop}
+        style={{ width: '100%', pointerEvents: presenting ? 'auto' : 'none' }}
+      />
+      {block.caption && <div style={{ fontSize: 12, color: '#64748B' }}>{block.caption}</div>}
+    </div>
+  );
+}
+
+function BadgeRender({ block }: { block: BadgeBlock }) {
+  const variant = block.variant ?? 'solid';
+  const baseColor = block.color ?? '#4F46E5';
+  const styles: React.CSSProperties = {
+    width: '100%', height: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    fontWeight: 600, fontSize: 14, letterSpacing: 1, textTransform: 'uppercase',
+    borderRadius: 999, padding: '0 12px', boxSizing: 'border-box',
+  };
+  if (variant === 'solid') Object.assign(styles, { background: baseColor, color: block.textColor ?? '#fff' });
+  else if (variant === 'soft') Object.assign(styles, { background: baseColor + '22', color: baseColor });
+  else Object.assign(styles, { border: `2px solid ${baseColor}`, color: baseColor, background: 'transparent' });
+  return <div style={styles}>{block.text}</div>;
 }
 
 function InkRender({ block }: { block: InkBlock }) {

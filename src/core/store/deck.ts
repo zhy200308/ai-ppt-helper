@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { useShallow } from 'zustand/shallow';
 import { enablePatches, produceWithPatches, applyPatches, type Patch as ImmerPatch } from 'immer';
-import type { Block, Deck, ID, Selection, Slide, ThemeSpec } from '../schema/types';
+import type { Block, DataTable, Deck, ID, Selection, Slide, ThemeSpec } from '../schema/types';
 import { createDeck, createSlide, newId } from '../schema/factory';
 
 enablePatches();
@@ -56,6 +56,15 @@ export interface DeckSliceActions {
   // theme & meta
   setTheme: (theme: Partial<ThemeSpec>) => void;
   setDeckTitle: (title: string) => void;
+  // data tables (for chart / table dataRef)
+  upsertDataTable: (table: DataTable) => void;
+  removeDataTable: (id: ID) => void;
+  setDataTableName: (id: ID, name: string) => void;
+  setDataTableCell: (id: ID, rowIdx: number, colKey: string, value: string | number) => void;
+  addDataTableRow: (id: ID, row?: Record<string, string | number>) => void;
+  removeDataTableRow: (id: ID, rowIdx: number) => void;
+  addDataTableColumn: (id: ID, col: { key: string; label: string; type: 'string' | 'number' | 'date' }) => void;
+  removeDataTableColumn: (id: ID, key: string) => void;
   // viewport
   setZoom: (zoom: number) => void;
   setPan: (pan: { x: number; y: number }) => void;
@@ -286,6 +295,69 @@ export const useDeckStore = create<DeckStore>()(
     setDeckTitle: (title) => {
       get().mutate('Rename deck', (draft) => {
         draft.meta.title = title;
+      });
+    },
+
+    upsertDataTable: (table) => {
+      get().mutate('Upsert data table', (draft) => {
+        if (!draft.dataTables) draft.dataTables = {};
+        draft.dataTables[table.id] = { ...table, updatedAt: Date.now() };
+      });
+    },
+    removeDataTable: (id) => {
+      get().mutate('Remove data table', (draft) => {
+        if (draft.dataTables) delete draft.dataTables[id];
+      });
+    },
+    setDataTableName: (id, name) => {
+      get().mutate('Rename data table', (draft) => {
+        const t = draft.dataTables?.[id];
+        if (t) { t.name = name; t.updatedAt = Date.now(); }
+      });
+    },
+    setDataTableCell: (id, rowIdx, colKey, value) => {
+      get().mutate('Edit data cell', (draft) => {
+        const t = draft.dataTables?.[id];
+        if (!t || !t.rows[rowIdx]) return;
+        t.rows[rowIdx][colKey] = value;
+        t.updatedAt = Date.now();
+      });
+    },
+    addDataTableRow: (id, row) => {
+      get().mutate('Add data row', (draft) => {
+        const t = draft.dataTables?.[id];
+        if (!t) return;
+        const fresh: Record<string, string | number> = {};
+        for (const c of t.columns) fresh[c.key] = row?.[c.key] ?? (c.type === 'number' ? 0 : '');
+        t.rows.push(fresh);
+        t.updatedAt = Date.now();
+      });
+    },
+    removeDataTableRow: (id, rowIdx) => {
+      get().mutate('Remove data row', (draft) => {
+        const t = draft.dataTables?.[id];
+        if (!t) return;
+        t.rows.splice(rowIdx, 1);
+        t.updatedAt = Date.now();
+      });
+    },
+    addDataTableColumn: (id, col) => {
+      get().mutate('Add data column', (draft) => {
+        const t = draft.dataTables?.[id];
+        if (!t) return;
+        if (t.columns.some((c) => c.key === col.key)) return;
+        t.columns.push(col);
+        for (const r of t.rows) r[col.key] = col.type === 'number' ? 0 : '';
+        t.updatedAt = Date.now();
+      });
+    },
+    removeDataTableColumn: (id, key) => {
+      get().mutate('Remove data column', (draft) => {
+        const t = draft.dataTables?.[id];
+        if (!t) return;
+        t.columns = t.columns.filter((c) => c.key !== key);
+        for (const r of t.rows) delete r[key];
+        t.updatedAt = Date.now();
       });
     },
 

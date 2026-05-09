@@ -678,6 +678,49 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* ============================================================
+   Data tables editor (right pane)
+   ============================================================ */
+.dt-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.dt-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-bottom: 1px solid var(--border-subtle);
+}
+.dt-list {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px; max-height: 160px; overflow: auto; border-bottom: 1px solid var(--border-subtle);
+}
+.dt-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; border-radius: 4px; font-size: 12px; cursor: pointer;
+}
+.dt-row:hover { background: var(--bg-soft); }
+.dt-row.active { background: var(--accent-soft); color: var(--accent); }
+.dt-editor { flex: 1; overflow: auto; padding: 10px; min-height: 0; }
+.dt-name {
+  width: 100%; padding: 6px 8px; font-size: 14px; font-weight: 600;
+  border: 1px solid var(--border-default); border-radius: 4px; background: #fff;
+}
+.dt-id { display: block; font-size: 10px; color: var(--text-subtle); margin-top: 2px; }
+.dt-grid-wrap { margin-top: 10px; overflow: auto; max-height: 50vh; border: 1px solid var(--border-subtle); border-radius: 4px; }
+.dt-grid { width: 100%; border-collapse: collapse; font-size: 12px; }
+.dt-grid th, .dt-grid td {
+  border: 1px solid var(--border-subtle); padding: 0; vertical-align: top;
+  background: #fff;
+}
+.dt-grid th { background: var(--bg-soft); padding: 6px; text-align: left; }
+.dt-grid td input {
+  width: 100%; min-width: 60px; padding: 6px; border: none; outline: none;
+  font: inherit; background: transparent;
+}
+.dt-grid td input:focus { background: var(--accent-soft); outline: 1px solid var(--accent); }
+.dt-rownum {
+  background: var(--bg-soft); width: 36px; text-align: center; font-size: 10px;
+  color: var(--text-muted); padding: 4px !important;
+}
+.dt-addcol { width: 70px; }
+.dt-hint { font-size: 11px; color: var(--text-muted); margin-top: 8px; display: inline-flex; align-items: center; gap: 4px; }
+
 .live-preview {
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-soft);

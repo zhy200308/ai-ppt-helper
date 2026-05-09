@@ -220,6 +220,73 @@ export const TOOL_POPULATE_SLIDE: ToolSpec = {
   },
 };
 
+export const TOOL_CREATE_DATA_TABLE: ToolSpec = {
+  name: 'create_data_table',
+  description: 'Create or replace a reusable data table in the deck. ANY time the user wants a chart or table populated with numeric data, you MUST call this first to record the source data, then create / edit the chart or table to reference this table by id. Do NOT inline numbers into chart series.',
+  parameters: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'Stable id for this table (or omit to auto-generate). Reuse the id to replace.' },
+      name: { type: 'string' },
+      columns: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            key: { type: 'string', description: 'machine-friendly column key (snake_case)' },
+            label: { type: 'string', description: 'human-friendly column label' },
+            type: { type: 'string', enum: ['string', 'number', 'date'] },
+          },
+          required: ['key', 'label', 'type'],
+        },
+      },
+      rows: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: { type: ['string', 'number'] as any },
+        },
+        description: 'Array of row objects keyed by column.key',
+      },
+    },
+    required: ['name', 'columns', 'rows'],
+  },
+};
+
+export const TOOL_INSERT_CHART_FROM_TABLE: ToolSpec = {
+  name: 'insert_chart_from_table',
+  description: 'Insert a chart on a slide that PULLS its data from a previously created data table. Use this instead of hand-rolling chart series.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      table_id: { type: 'string' },
+      chart: { type: 'string', enum: ['bar', 'line', 'pie', 'area', 'scatter'] },
+      x_column: { type: 'string', description: 'column key for x-axis labels' },
+      y_columns: { type: 'array', items: { type: 'string' }, description: 'optional list of numeric column keys to plot; defaults to all numeric columns' },
+      x: { type: 'number' }, y: { type: 'number' },
+      w: { type: 'number' }, h: { type: 'number' },
+    },
+    required: ['slide_id', 'table_id', 'chart', 'x_column'],
+  },
+};
+
+export const TOOL_INSERT_TABLE_FROM_TABLE: ToolSpec = {
+  name: 'insert_table_from_table',
+  description: 'Insert a table block on a slide whose cells are sourced from a deck-level data table. Use for tabular data presentation.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      table_id: { type: 'string' },
+      columns: { type: 'array', items: { type: 'string' }, description: 'optional column keys to display in order; defaults to all' },
+      x: { type: 'number' }, y: { type: 'number' },
+      w: { type: 'number' }, h: { type: 'number' },
+    },
+    required: ['slide_id', 'table_id'],
+  },
+};
+
 export const TOOL_DERIVE_THEME: ToolSpec = {
   name: 'derive_theme',
   description: 'Generate a WCAG-AA compliant palette + heading/body font pair from a single primary color and a vibe description. Saves & applies the theme.',
@@ -263,4 +330,7 @@ export const ALL_TOOLS: ToolSpec[] = [
   TOOL_SET_THEME,
   TOOL_DERIVE_THEME,
   TOOL_GENERATE_IMAGE,
+  TOOL_CREATE_DATA_TABLE,
+  TOOL_INSERT_CHART_FROM_TABLE,
+  TOOL_INSERT_TABLE_FROM_TABLE,
 ];
