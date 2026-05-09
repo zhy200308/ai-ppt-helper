@@ -5,7 +5,7 @@ import { useDeckStore } from '../core/store/deck';
 import { useSettingsStore } from '../core/store/settings';
 import { createDeck, newId, createSlide } from '../core/schema/factory';
 import type { Block, Slide } from '../core/schema/types';
-import { AIService, type ChatMessage, type StreamEvent } from './service';
+import { AIService, type ChatMessage, type ChatAttachment, type StreamEvent } from './service';
 import { ALL_TOOLS } from './tools';
 import { derivePalette, suggestFontPair } from '../themes/colorIntelligence';
 import { loadSkill, parseSlash } from '../skills';
@@ -67,11 +67,20 @@ Each layout consumes specific fields; provide ONLY the relevant ones:
 
 Output should be in the same language as the user.`;
 
+export interface ChatSessionAttachment {
+  name: string;
+  mime: string;
+  // Either a text snippet (for text-like uploads) or a data URL (for
+  // images / pdfs). Persisted with the session so reloads keep context.
+  previewText?: string;
+  dataUrl?: string;
+}
+
 export interface ChatSessionMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   text: string;
-  attachments?: { name: string; mime: string; previewText?: string }[];
+  attachments?: ChatSessionAttachment[];
   contextRefs?: { kind: 'slide' | 'block'; id: string; label: string }[];
   ts: number;
   status?: 'pending' | 'streaming' | 'done' | 'error';
@@ -88,15 +97,24 @@ export function buildChatHistory(session: ChatSessionMessage[]): ChatMessage[] {
   for (const m of session) {
     if (m.role === 'system') continue;
     let content = m.text;
-    if (m.attachments?.length) {
-      const parts = m.attachments.map((a) => `[Attachment: ${a.name}${a.previewText ? `\n${a.previewText.slice(0, 4000)}` : ''}]`).join('\n\n');
-      content = `${content}\n\n${parts}`;
-    }
     if (m.contextRefs?.length) {
       const refs = m.contextRefs.map((r) => `[${r.kind}:${r.id}]`).join(' ');
       content = `${refs} ${content}`;
     }
-    out.push({ role: m.role, content });
+    const attachments: ChatAttachment[] = [];
+    for (const a of m.attachments ?? []) {
+      if (a.dataUrl && a.mime.startsWith('image/')) {
+        attachments.push({ kind: 'image', mediaType: a.mime, dataUrl: a.dataUrl });
+      } else if (a.dataUrl && a.mime === 'application/pdf') {
+        attachments.push({ kind: 'document', mediaType: a.mime, dataUrl: a.dataUrl, name: a.name });
+      } else if (a.previewText) {
+        attachments.push({ kind: 'text', name: a.name, mediaType: a.mime, text: a.previewText.slice(0, 12000) });
+      } else if (a.dataUrl) {
+        // Unknown binary — degrade to a name-only text marker.
+        attachments.push({ kind: 'text', name: a.name, mediaType: a.mime, text: `[Binary attachment ${a.name}]` });
+      }
+    }
+    out.push({ role: m.role, content, attachments: attachments.length ? attachments : undefined });
   }
   return out;
 }

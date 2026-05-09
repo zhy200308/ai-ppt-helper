@@ -1,8 +1,31 @@
 import type { ProviderConfig, ProxyConfig } from './types';
 
+export interface AttachmentImage {
+  kind: 'image';
+  mediaType: string;       // e.g. "image/png"
+  dataUrl: string;         // "data:image/png;base64,..."
+}
+
+export interface AttachmentDocument {
+  kind: 'document';
+  mediaType: string;       // e.g. "application/pdf"
+  dataUrl: string;         // "data:application/pdf;base64,..."
+  name: string;
+}
+
+export interface AttachmentText {
+  kind: 'text';
+  name: string;
+  mediaType: string;
+  text: string;            // truncated already
+}
+
+export type ChatAttachment = AttachmentImage | AttachmentDocument | AttachmentText;
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  attachments?: ChatAttachment[];
   toolCallId?: string;
   toolCalls?: { id: string; name: string; arguments: string }[];
 }
@@ -124,6 +147,38 @@ export class AIService {
             ],
           };
         }
+        // Build user turns as content arrays so we can interleave images.
+        if (m.role === 'user' && m.attachments && m.attachments.length) {
+          const parts: any[] = [];
+          for (const a of m.attachments) {
+            if (a.kind === 'image') {
+              parts.push({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: a.mediaType,
+                  data: stripDataUrlPrefix(a.dataUrl),
+                },
+              });
+            } else if (a.kind === 'document') {
+              parts.push({
+                type: 'document',
+                source: {
+                  type: 'base64',
+                  media_type: a.mediaType,
+                  data: stripDataUrlPrefix(a.dataUrl),
+                },
+              });
+            } else if (a.kind === 'text') {
+              parts.push({
+                type: 'text',
+                text: `[Attachment: ${a.name}]\n${a.text}`,
+              });
+            }
+          }
+          if (m.content) parts.push({ type: 'text', text: m.content });
+          return { role: 'user' as const, content: parts };
+        }
         return { role: m.role as 'user' | 'assistant', content: m.content };
       });
     const body: any = {
@@ -189,6 +244,21 @@ export class AIService {
           })),
         };
       }
+      if (m.role === 'user' && m.attachments && m.attachments.length) {
+        const parts: any[] = [];
+        for (const a of m.attachments) {
+          if (a.kind === 'image') {
+            parts.push({ type: 'image_url', image_url: { url: a.dataUrl } });
+          } else if (a.kind === 'text') {
+            parts.push({ type: 'text', text: `[Attachment: ${a.name}]\n${a.text}` });
+          } else {
+            // OpenAI doesn't take generic documents; embed name + note.
+            parts.push({ type: 'text', text: `[Binary attachment: ${a.name} (${a.mediaType})]` });
+          }
+        }
+        if (m.content) parts.push({ type: 'text', text: m.content });
+        return { role: 'user', content: parts };
+      }
       return { role: m.role, content: m.content };
     });
     const body: any = {
@@ -243,9 +313,18 @@ export class AIService {
         systemInstruction = (systemInstruction ? systemInstruction + '\n' : '') + m.content;
         continue;
       }
+      const parts: any[] = [];
+      for (const a of m.attachments ?? []) {
+        if (a.kind === 'image' || a.kind === 'document') {
+          parts.push({ inlineData: { mimeType: a.mediaType, data: stripDataUrlPrefix(a.dataUrl) } });
+        } else if (a.kind === 'text') {
+          parts.push({ text: `[Attachment: ${a.name}]\n${a.text}` });
+        }
+      }
+      if (m.content) parts.push({ text: m.content });
       contents.push({
         role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
+        parts: parts.length ? parts : [{ text: '' }],
       });
     }
     const body: any = {
@@ -451,6 +530,12 @@ function joinUrl(base: string, path: string): string {
 function safeParseJson(s: string | undefined): unknown {
   if (!s) return {};
   try { return JSON.parse(s); } catch { return {}; }
+}
+
+function stripDataUrlPrefix(dataUrl: string): string {
+  // Strip "data:<media>;base64," prefix to keep only the base64 payload.
+  const idx = dataUrl.indexOf(',');
+  return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl;
 }
 
 async function safeRead(resp: Response): Promise<string> {
