@@ -3,11 +3,14 @@ import {
   Undo2, Redo2, Plus, Type, Square, Image as ImgIcon, BarChart3, Table2,
   Play, Download, Settings as SettingsIcon, MessageSquare, Save,
   List, Minus, Video, Code2, Link2, ChevronDown,
+  TrendingUp, Images, Sigma, Volume2, BadgeCheck,
 } from 'lucide-react';
 import { useDeckStore } from '../../core/store/deck';
 import {
-  createConnectorBlock, createDividerBlock, createEmbedBlock, createImageBlock,
-  createListBlock, createShapeBlock, createTextBlock, createVideoBlock, newId,
+  createAudioBlock, createBadgeBlock, createConnectorBlock, createDividerBlock,
+  createEmbedBlock, createGalleryBlock, createImageBlock, createKpiCardBlock,
+  createListBlock, createMathBlock, createProgressBlock, createShapeBlock,
+  createTextBlock, createVideoBlock, newId,
 } from '../../core/schema/factory';
 import { useI18n } from '../../i18n';
 import { useEffect, useRef } from 'react';
@@ -19,7 +22,8 @@ interface Props {
 
 type InsertKind =
   | 'text' | 'shape' | 'image' | 'chart' | 'table'
-  | 'list-bullet' | 'list-number' | 'divider' | 'video' | 'embed' | 'code' | 'connector';
+  | 'list-bullet' | 'list-number' | 'divider' | 'video' | 'embed' | 'code' | 'connector'
+  | 'progress' | 'kpi' | 'gallery' | 'math' | 'audio' | 'badge';
 
 function InsertMore({ onInsert }: { onInsert: (k: InsertKind) => void }) {
   const [open, setOpen] = useState(false);
@@ -40,6 +44,12 @@ function InsertMore({ onInsert }: { onInsert: (k: InsertKind) => void }) {
       {open && (
         <div className="insert-menu">
           <button onClick={() => { onInsert('list-number'); setOpen(false); }}><List size={12}/> 有序列表</button>
+          <button onClick={() => { onInsert('progress'); setOpen(false); }}><TrendingUp size={12}/> 进度条</button>
+          <button onClick={() => { onInsert('kpi'); setOpen(false); }}><BarChart3 size={12}/> KPI 卡片</button>
+          <button onClick={() => { onInsert('gallery'); setOpen(false); }}><Images size={12}/> 图片画廊</button>
+          <button onClick={() => { onInsert('math'); setOpen(false); }}><Sigma size={12}/> 数学公式</button>
+          <button onClick={() => { onInsert('audio'); setOpen(false); }}><Volume2 size={12}/> 音频</button>
+          <button onClick={() => { onInsert('badge'); setOpen(false); }}><BadgeCheck size={12}/> 徽标</button>
           <button onClick={() => { onInsert('connector'); setOpen(false); }}><Link2 size={12}/> 连接线</button>
           <button onClick={() => { onInsert('video'); setOpen(false); }}><Video size={12}/> 视频</button>
           <button onClick={() => { onInsert('embed'); setOpen(false); }}><Link2 size={12}/> 嵌入网页</button>
@@ -66,11 +76,7 @@ export function TopBar({ onToggleSettings, onToggleChat }: Props) {
   const setDeckTitle = useDeckStore((s) => s.setDeckTitle);
   const [exporting, setExporting] = useState(false);
 
-  const insert = (
-    kind:
-      | 'text' | 'shape' | 'image' | 'chart' | 'table'
-      | 'list-bullet' | 'list-number' | 'divider' | 'video' | 'embed' | 'code' | 'connector',
-  ) => {
+  const insert = (kind: InsertKind) => {
     if (!slideId) return;
     if (kind === 'text') addBlock(slideId, createTextBlock());
     else if (kind === 'shape') addBlock(slideId, createShapeBlock());
@@ -81,6 +87,12 @@ export function TopBar({ onToggleSettings, onToggleChat }: Props) {
     else if (kind === 'video') addBlock(slideId, createVideoBlock());
     else if (kind === 'embed') addBlock(slideId, createEmbedBlock());
     else if (kind === 'connector') addBlock(slideId, createConnectorBlock());
+    else if (kind === 'progress') addBlock(slideId, createProgressBlock());
+    else if (kind === 'kpi') addBlock(slideId, createKpiCardBlock());
+    else if (kind === 'gallery') addBlock(slideId, createGalleryBlock());
+    else if (kind === 'math') addBlock(slideId, createMathBlock());
+    else if (kind === 'audio') addBlock(slideId, createAudioBlock());
+    else if (kind === 'badge') addBlock(slideId, createBadgeBlock());
     else if (kind === 'chart') addBlock(slideId, {
       id: newId('blk'),
       type: 'chart', chart: 'bar', z: 1, x: 300, y: 200, w: 800, h: 500,

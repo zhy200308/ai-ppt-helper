@@ -57,6 +57,18 @@ Each layout consumes specific fields; provide ONLY the relevant ones:
 - steps-vertical: steps[] of {title, body?}; max 5
 - quote: quote.{text, author?, role?}
 
+# Data → chart / table workflow (HARD RULE)
+Whenever the user asks for a chart, pie, bar, line, or numeric table:
+  1. FIRST call \`create_data_table\` to record the source data with named
+     columns (key + label + type) and rows. Even if the user only said
+     "make a pie of Q1-Q4 sales", you must store it as a data table.
+  2. THEN call \`insert_chart_from_table\` (for charts) or
+     \`insert_table_from_table\` (for tabular display) referencing the
+     table id you just created. NEVER inline numeric series directly into
+     a chart block — the user can edit the data table to drive the chart.
+  3. The data table is the single source of truth; multiple charts/tables
+     can reference the same id. Reuse ids when updating.
+
 # Style discipline
 - <= 6 bullets per body slide, each <= 14 words
 - Use parallel structure across bullets (start with same part of speech)
@@ -143,9 +155,70 @@ async function applyTool(name: string, input: any): Promise<string> {
       return doDeriveTheme(input);
     case 'generate_image':
       return doGenerateImage(input);
+    case 'create_data_table':
+      return doCreateDataTable(input);
+    case 'insert_chart_from_table':
+      return doInsertChartFromTable(input);
+    case 'insert_table_from_table':
+      return doInsertTableFromTable(input);
     default:
       return `Unknown tool: ${name}`;
   }
+}
+
+function doCreateDataTable(input: any): string {
+  const id = input.id || `dt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const table = {
+    id,
+    name: input.name || 'AI Data',
+    columns: input.columns ?? [],
+    rows: input.rows ?? [],
+    source: 'AI',
+    updatedAt: Date.now(),
+  };
+  if (!table.columns.length) return 'create_data_table: columns required';
+  useDeckStore.getState().upsertDataTable(table);
+  return `data table ${id} (${table.rows.length} rows × ${table.columns.length} cols) saved`;
+}
+
+function doInsertChartFromTable(input: any): string {
+  const { slide_id, table_id, chart, x_column, y_columns, x, y, w, h } = input;
+  if (!slide_id || !table_id || !chart || !x_column) return 'missing required fields';
+  const table = useDeckStore.getState().deck.dataTables?.[table_id];
+  if (!table) return `data table ${table_id} not found — call create_data_table first`;
+  useDeckStore.getState().addBlock(slide_id, {
+    id: newId('blk'),
+    type: 'chart',
+    chart,
+    z: 1,
+    x: x ?? 240, y: y ?? 260, w: w ?? 1440, h: h ?? 700,
+    series: [], categories: [],
+    dataRef: { tableId: table_id, xColumn: x_column, yColumns: y_columns },
+  } as any);
+  return `chart bound to ${table_id} on slide ${slide_id}`;
+}
+
+function doInsertTableFromTable(input: any): string {
+  const { slide_id, table_id, columns, x, y, w, h } = input;
+  if (!slide_id || !table_id) return 'missing required fields';
+  const table = useDeckStore.getState().deck.dataTables?.[table_id];
+  if (!table) return `data table ${table_id} not found`;
+  const cols = columns?.length ? columns : table.columns.map((c) => c.key);
+  useDeckStore.getState().addBlock(slide_id, {
+    id: newId('blk'),
+    type: 'table',
+    rows: table.rows.length + 1,
+    cols: cols.length,
+    cells: [
+      cols.map((k: string) => table.columns.find((c) => c.key === k)?.label ?? k),
+      ...table.rows.map((r) => cols.map((k: string) => String(r[k] ?? ''))),
+    ],
+    headerRow: true,
+    z: 1,
+    x: x ?? 240, y: y ?? 260, w: w ?? 1440, h: h ?? 700,
+    dataRef: { tableId: table_id, columns: cols },
+  } as any);
+  return `table bound to ${table_id} on slide ${slide_id}`;
 }
 
 function doOutlineDeck(input: any): string {
