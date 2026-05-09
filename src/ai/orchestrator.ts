@@ -88,12 +88,24 @@ export interface ChatSessionAttachment {
   dataUrl?: string;
 }
 
+export interface ToolEvent {
+  id: string;          // toolCallId from the LLM, also used as key
+  name: string;
+  input?: unknown;
+  result?: string;
+  status: 'running' | 'done' | 'error';
+  ts: number;
+}
+
 export interface ChatSessionMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   text: string;
   attachments?: ChatSessionAttachment[];
   contextRefs?: { kind: 'slide' | 'block'; id: string; label: string }[];
+  // Tool calls executed while this assistant message was being streamed.
+  // Rendered as a collapsible "活动" timeline below the text.
+  toolEvents?: ToolEvent[];
   ts: number;
   status?: 'pending' | 'streaming' | 'done' | 'error';
   error?: string;
@@ -433,8 +445,8 @@ export async function runChat(opts: {
   history: ChatSessionMessage[];
   signal: AbortSignal;
   onTextDelta: (delta: string) => void;
-  onToolCall: (name: string, input: any) => void;
-  onToolResult: (name: string, result: string) => void;
+  onToolCall: (id: string, name: string, input: any) => void;
+  onToolResult: (id: string, name: string, result: string) => void;
   onError: (msg: string) => void;
   onUsage?: (u: { inputTokens?: number; outputTokens?: number }) => void;
 }): Promise<void> {
@@ -505,9 +517,9 @@ export async function runChat(opts: {
         })),
       },
       ...await Promise.all(pendingToolCalls.map(async (t) => {
-        opts.onToolCall(t.name, t.input);
+        opts.onToolCall(t.id, t.name, t.input);
         const r = await applyTool(t.name, t.input);
-        opts.onToolResult(t.name, r);
+        opts.onToolResult(t.id, t.name, r);
         return { role: 'tool' as const, content: r, toolCallId: t.id };
       })),
     ];

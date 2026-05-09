@@ -90,7 +90,21 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
     return () => { if (persistTimer.current) clearTimeout(persistTimer.current); };
   }, [messages, sessionId, sessionTitle, deckId]);
 
+  // Smart auto-scroll: only pin to bottom while user is near bottom.
+  // Lets users scroll up to read history without being yanked back down.
+  const stickToBottom = useRef(true);
   useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickToBottom.current = distance < 60;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+  useEffect(() => {
+    if (!stickToBottom.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
@@ -141,7 +155,6 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
     abortRef.current = ac;
 
     let buffer = '';
-    const toolLog: string[] = [];
 
     await runChat({
       history: next.filter((m) => m.id !== assistant.id),
@@ -150,16 +163,19 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
         buffer += d;
         setMessages((cur) => updateAssistant(cur, assistant.id, { text: buffer, status: 'streaming' }));
       },
-      onToolCall: (name) => {
-        toolLog.push(`▸ ${name}`);
+      onToolCall: (id, name, input) => {
         setMessages((cur) => updateAssistant(cur, assistant.id, {
-          text: [buffer, '', toolLog.join('\n')].filter(Boolean).join('\n'),
+          toolEvents: [
+            ...((cur.find((m) => m.id === assistant.id)?.toolEvents) ?? []),
+            { id, name, input, status: 'running', ts: Date.now() },
+          ],
         }));
       },
-      onToolResult: (name, result) => {
-        toolLog[toolLog.length - 1] = `✓ ${name}: ${result}`;
+      onToolResult: (id, _name, result) => {
         setMessages((cur) => updateAssistant(cur, assistant.id, {
-          text: [buffer, '', toolLog.join('\n')].filter(Boolean).join('\n'),
+          toolEvents: ((cur.find((m) => m.id === assistant.id)?.toolEvents) ?? []).map((t) =>
+            t.id === id ? { ...t, result, status: result.startsWith('Error') || result.includes('failed') ? 'error' : 'done' } : t,
+          ),
         }));
       },
       onError: (msg) => {
@@ -431,26 +447,134 @@ function updateAssistant(messages: ChatSessionMessage[], id: string, patch: Part
 }
 
 function MessageBubble({ msg }: { msg: ChatSessionMessage }) {
+  const [showAttach, setShowAttach] = useState(false);
+  const hasText = !!msg.text || msg.status === 'streaming';
+  const hasTools = (msg.toolEvents?.length ?? 0) > 0;
+  const carriedCount = (msg.attachments?.length ?? 0) + (msg.contextRefs?.length ?? 0);
+
   return (
     <div className={`bubble ${msg.role} ${msg.status ?? ''}`}>
-      {msg.role === 'user' && msg.contextRefs && msg.contextRefs.length > 0 && (
-        <div className="bubble-refs">
-          {msg.contextRefs.map((r) => (
-            <span key={r.kind + r.id} className="ctx-chip mini">@{r.label}</span>
-          ))}
+      {hasText && (
+        <div className="bubble-text">
+          {msg.text || (msg.status === 'streaming' && !hasTools ? <span className="dot-dot-dot"/> : '')}
         </div>
       )}
-      <div className="bubble-text">
-        {msg.text || (msg.status === 'streaming' ? <span className="dot-dot-dot"/> : '')}
-      </div>
-      {msg.attachments && msg.attachments.length > 0 && (
-        <div className="bubble-attachments">
-          {msg.attachments.map((a, i) => (
-            <span key={i} className="file-chip mini">{a.name}</span>
+      {hasTools && (
+        <ToolTimeline events={msg.toolEvents!} streaming={msg.status === 'streaming'} />
+      )}
+      {carriedCount > 0 && (
+        <CarriedFooter
+          attachments={msg.attachments ?? []}
+          refs={msg.contextRefs ?? []}
+          expanded={showAttach}
+          onToggle={() => setShowAttach((v) => !v)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ToolTimeline({ events, streaming }: { events: import('../../ai/orchestrator').ToolEvent[]; streaming: boolean }) {
+  const [open, setOpen] = useState(streaming);
+  const running = events.filter((e) => e.status === 'running').length;
+  const done = events.filter((e) => e.status === 'done').length;
+  const errored = events.filter((e) => e.status === 'error').length;
+  return (
+    <div className={`tool-timeline ${open ? 'open' : ''}`}>
+      <button className="tool-timeline-header" onClick={() => setOpen((v) => !v)}>
+        <span className="caret">{open ? '▾' : '▸'}</span>
+        <span>AI 操作 · {events.length}</span>
+        {running > 0 && <span className="dot running" title="进行中"/>}
+        {done > 0 && <span style={{ color: '#10B981' }}>✓ {done}</span>}
+        {errored > 0 && <span style={{ color: '#EF4444' }}>✗ {errored}</span>}
+      </button>
+      {open && (
+        <ul className="tool-timeline-list">
+          {events.map((e) => (
+            <li key={e.id} className={`tool-event ${e.status}`}>
+              <span className="tool-event-icon">
+                {e.status === 'running' ? '⋯' : e.status === 'error' ? '✗' : '✓'}
+              </span>
+              <code className="tool-event-name">{e.name}</code>
+              {e.result && <span className="tool-event-result" title={e.result}>{truncate(e.result, 60)}</span>}
+            </li>
           ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function CarriedFooter({
+  attachments, refs, expanded, onToggle,
+}: {
+  attachments: import('../../ai/orchestrator').ChatSessionAttachment[];
+  refs: { kind: 'slide' | 'block'; id: string; label: string }[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const total = attachments.length + refs.length;
+  return (
+    <div className={`bubble-carry ${expanded ? 'open' : ''}`}>
+      <button className="bubble-carry-summary" onClick={onToggle}>
+        <span className="caret">{expanded ? '▾' : '▸'}</span>
+        携带内容 · {attachments.length > 0 && <span>{attachments.length} 文件</span>}
+        {attachments.length > 0 && refs.length > 0 && <span>·</span>}
+        {refs.length > 0 && <span>{refs.length} 引用</span>}
+        {total === 0 && <span>无</span>}
+      </button>
+      {expanded && (
+        <div className="bubble-carry-body">
+          {refs.length > 0 && (
+            <div className="carry-section">
+              <div className="carry-label">上下文引用</div>
+              <div className="carry-chips">
+                {refs.map((r) => (
+                  <span key={r.kind + r.id} className="ctx-chip">@{r.label}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {attachments.length > 0 && (
+            <div className="carry-section">
+              <div className="carry-label">附件</div>
+              <ul className="carry-files">
+                {attachments.map((a, i) => (
+                  <CarriedFile key={i} a={a} />
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function CarriedFile({ a }: { a: import('../../ai/orchestrator').ChatSessionAttachment }) {
+  const [open, setOpen] = useState(false);
+  const isImage = a.mime?.startsWith('image/') && a.dataUrl;
+  return (
+    <li className="carry-file">
+      <button className="carry-file-head" onClick={() => setOpen((v) => !v)}>
+        <span className="caret">{open ? '▾' : '▸'}</span>
+        <span className="carry-file-name">{a.name}</span>
+        <span className="carry-file-mime">{a.mime || 'binary'}</span>
+      </button>
+      {open && (
+        <div className="carry-file-body">
+          {isImage ? (
+            <img src={a.dataUrl} alt={a.name} style={{ maxWidth: '100%', borderRadius: 4, display: 'block' }}/>
+          ) : a.previewText ? (
+            <pre>{a.previewText.slice(0, 4000)}{a.previewText.length > 4000 ? '\n…(已截断)' : ''}</pre>
+          ) : a.dataUrl ? (
+            <a href={a.dataUrl} download={a.name} target="_blank" rel="noreferrer">下载</a>
+          ) : (
+            <span style={{ color: '#94A3B8', fontSize: 11 }}>(无可预览内容)</span>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
 

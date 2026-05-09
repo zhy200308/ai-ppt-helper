@@ -148,7 +148,7 @@ describe('AI deck generation end-to-end (mocked LLM)', () => {
       }],
       signal: ac.signal,
       onTextDelta: (d) => { buf += d; },
-      onToolCall: (n) => toolCalls.push(n),
+      onToolCall: (_id, n) => toolCalls.push(n),
       onToolResult: () => {},
       onError: (m) => { errored = m; },
     });
