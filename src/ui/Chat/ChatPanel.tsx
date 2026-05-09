@@ -114,7 +114,12 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
       id: `u_${Date.now()}`,
       role: 'user',
       text: input,
-      attachments: files.map((f) => ({ name: f.name, mime: f.mime, previewText: f.previewText ?? f.dataUrl ?? '' })),
+      attachments: files.map((f) => ({
+        name: f.name,
+        mime: f.mime,
+        previewText: f.previewText,
+        dataUrl: f.dataUrl,
+      })),
       contextRefs: ctxRefs,
       ts: Date.now(),
       status: 'done',
@@ -316,11 +321,13 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
             </label>
             <textarea
               rows={2}
-              placeholder={macConfirm ? '描述你想要的 PPT…  (Cmd+Enter 触发，再次确认发送)' : '描述你想要的 PPT…  (Ctrl+Enter 发送)'}
+              placeholder={macConfirm
+                ? '描述你想要的 PPT…  (Enter 触发，再次 Enter 发送 / Shift+Enter 换行)'
+                : '描述你想要的 PPT…  (Enter 发送 / Shift+Enter 换行)'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   triggerSend();
                 } else if (e.key === 'Escape' && confirmingSend) {
