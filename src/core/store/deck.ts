@@ -368,7 +368,9 @@ export const useDeckStore = create<DeckStore>()(
 
     loadDeck: (deck) =>
       set({
-        deck,
+        // Backfill optional fields so selectors don't synthesize fresh
+        // empty objects on every render (which breaks zustand identity).
+        deck: { ...deck, dataTables: deck.dataTables ?? {} },
         selection: { slideId: deck.slides[0]?.id ?? null, blockIds: [] },
         history: { past: [], future: [] },
         dirty: false,

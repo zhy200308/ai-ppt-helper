@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Database } from 'lucide-react';
+import { useShallow } from 'zustand/shallow';
 import { useDeckStore, useSelectedBlocks, useActiveSlide } from '../../core/store/deck';
 import type { Block, ChartBlock, ImageBlock, ShapeBlock, TableBlock, TextBlock, ProgressBlock, KpiCardBlock, BadgeBlock, MathBlock, GalleryBlock } from '../../core/schema/types';
 import { NumberField } from '../components/NumberField';
@@ -210,7 +211,7 @@ function ImageProps({ block, onChange }: { block: ImageBlock; onChange: (p: Part
 }
 
 function ChartProps({ block, onChange, onOpenTables }: { block: ChartBlock; onChange: (p: Partial<ChartBlock>) => void; onOpenTables: () => void }) {
-  const tables = useDeckStore((s) => s.deck.dataTables ?? {});
+  const tables = useDeckStore(useShallow((s) => s.deck.dataTables ?? {}));
   const ref = block.dataRef;
   const ids = Object.keys(tables);
   const tbl = ref ? tables[ref.tableId] : undefined;
@@ -275,7 +276,7 @@ function ChartProps({ block, onChange, onOpenTables }: { block: ChartBlock; onCh
 }
 
 function TableProps({ block, onChange, onOpenTables }: { block: TableBlock; onChange: (p: Partial<TableBlock>) => void; onOpenTables: () => void }) {
-  const tables = useDeckStore((s) => s.deck.dataTables ?? {});
+  const tables = useDeckStore(useShallow((s) => s.deck.dataTables ?? {}));
   const ref = block.dataRef;
   const ids = Object.keys(tables);
   return (

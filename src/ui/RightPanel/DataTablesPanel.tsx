@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Database, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useShallow } from 'zustand/shallow';
 import { useDeckStore } from '../../core/store/deck';
 import { createDataTable } from '../../core/schema/factory';
 
@@ -7,7 +8,11 @@ import { createDataTable } from '../../core/schema/factory';
 // with `dataRef` pull live from these. Embedded into the right pane via
 // a button when no block is selected.
 export function DataTablesPanel({ onClose }: { onClose: () => void }) {
-  const tables = useDeckStore((s) => s.deck.dataTables ?? {});
+  // useShallow prevents the loop that fires when `dataTables` is undefined
+  // and `?? {}` would synthesize a fresh object on every render.
+  const tables = useDeckStore(
+    useShallow((s) => (s.deck.dataTables ?? {}) as Record<string, NonNullable<typeof s.deck.dataTables>[string]>),
+  );
   const upsert = useDeckStore((s) => s.upsertDataTable);
   const remove = useDeckStore((s) => s.removeDataTable);
   const setName = useDeckStore((s) => s.setDataTableName);

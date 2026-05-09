@@ -334,5 +334,6 @@ export function createDeck(title = 'Untitled Presentation'): Deck {
     },
     theme,
     slides: [createCoverSlide(theme, title, 'AI-powered presentation')],
+    dataTables: {},
   };
 }
