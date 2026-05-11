@@ -287,6 +287,39 @@ export const TOOL_INSERT_TABLE_FROM_TABLE: ToolSpec = {
   },
 };
 
+export const TOOL_INSERT_DESIGN_ELEMENT: ToolSpec = {
+  name: 'insert_design_element',
+  description: 'Insert a precisely positioned design element on a slide: generated SVG image, icon, divider/line, or shape. Always include x/y/w/h and layer placement for fine-grained PPT composition.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      kind: { type: 'string', enum: ['svg', 'icon', 'line', 'shape'] },
+      x: { type: 'number' },
+      y: { type: 'number' },
+      w: { type: 'number' },
+      h: { type: 'number' },
+      layer: {
+        type: 'object',
+        properties: {
+          mode: { type: 'string', enum: ['top', 'middle', 'bottom', 'above', 'below'] },
+          targetBlockId: { type: 'string', description: 'Required when mode is above/below.' },
+        },
+      },
+      svg_code: { type: 'string', description: 'Raw <svg>...</svg> markup for kind=svg. Keep scripts/events out.' },
+      icon_name: { type: 'string', description: 'Lucide icon name for kind=icon.' },
+      color: { type: 'string' },
+      strokeWidth: { type: 'number' },
+      style: { type: 'string', enum: ['solid', 'dashed', 'dotted'] },
+      shape: { type: 'string', enum: ['rectangle', 'rounded-rectangle', 'ellipse', 'triangle', 'line', 'arrow', 'star', 'polygon', 'pentagon', 'hexagon', 'octagon', 'parallelogram', 'trapezoid', 'rhombus', 'cloud', 'heart', 'callout', 'speech-bubble', 'cross', 'chevron'] },
+      fill: { type: 'string' },
+      alt: { type: 'string' },
+      opacity: { type: 'number' },
+    },
+    required: ['slide_id', 'kind', 'x', 'y', 'w', 'h'],
+  },
+};
+
 export const TOOL_DERIVE_THEME: ToolSpec = {
   name: 'derive_theme',
   description: 'Generate a WCAG-AA compliant palette + heading/body font pair from a single primary color and a vibe description. Saves & applies the theme.',
@@ -315,6 +348,15 @@ export const TOOL_GENERATE_IMAGE: ToolSpec = {
       w: { type: 'number' },
       h: { type: 'number' },
       style: { type: 'string', description: 'optional style hint, e.g. "minimalist", "isometric"' },
+      layer: {
+        type: 'object',
+        properties: {
+          mode: { type: 'string', enum: ['top', 'middle', 'bottom', 'above', 'below'] },
+          targetBlockId: { type: 'string' },
+        },
+      },
+      fit: { type: 'string', enum: ['cover', 'contain', 'fill'] },
+      cornerRadius: { type: 'number' },
     },
     required: ['prompt', 'slide_id'],
   },
@@ -330,6 +372,7 @@ export const ALL_TOOLS: ToolSpec[] = [
   TOOL_SET_THEME,
   TOOL_DERIVE_THEME,
   TOOL_GENERATE_IMAGE,
+  TOOL_INSERT_DESIGN_ELEMENT,
   TOOL_CREATE_DATA_TABLE,
   TOOL_INSERT_CHART_FROM_TABLE,
   TOOL_INSERT_TABLE_FROM_TABLE,

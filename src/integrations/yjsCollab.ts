@@ -42,9 +42,10 @@ export async function activateYjsCollab(opts: YjsCollabOptions): Promise<CollabP
     awarenessListeners.forEach((l) => l(peers));
   });
 
-  root.observeDeep(() => {
-    const snapshot = root.toJSON();
-    remoteListeners.forEach((l) => l(snapshot));
+  root.observeDeep((_, transaction) => {
+    if (transaction.origin === 'local') return;
+    const snapshot = root.get('snapshot');
+    if (snapshot) remoteListeners.forEach((l) => l(snapshot));
   });
 
   const provider: CollabProvider = {
@@ -59,16 +60,13 @@ export async function activateYjsCollab(opts: YjsCollabOptions): Promise<CollabP
     },
     applyLocalPatch(patch: unknown) {
       doc.transact(() => {
-        // Naive: store the latest patch under a versioned key. Real
-        // production code would translate immer patches into Y.* ops.
-        const arr = root.get('patches') as any;
-        const a = arr ?? new Y.Array<unknown>();
-        if (!arr) root.set('patches', a);
-        a.push([patch]);
+        root.set('snapshot', patch);
       }, 'local');
     },
     onRemotePatch(cb) {
       remoteListeners.add(cb);
+      const snapshot = root.get('snapshot');
+      if (snapshot) cb(snapshot);
       return () => remoteListeners.delete(cb);
     },
     onAwarenessChange(cb) {

@@ -77,6 +77,9 @@ Whenever the user asks for a chart, pie, bar, line, or numeric table:
 - The validator will clamp blocks to the canvas and fix contrast; do not
   worry about pixel coordinates
 
+- For decorative backgrounds, icons, dividers, lines, and generated SVG visuals, call insert_design_element with exact x/y/w/h plus a layer placement. Use SVG code for generated visuals when possible so the frontend can parse it as an image block.
+- Use layer.mode="bottom" for background decorations, "middle" for supporting visuals, "top" for foreground accents, or "above"/"below" with targetBlockId when positioning relative to a specific block.
+
 Output should be in the same language as the user.`;
 
 export interface ChatSessionAttachment {
@@ -165,6 +168,8 @@ async function applyTool(name: string, input: any): Promise<string> {
       return doSetTheme(input);
     case 'derive_theme':
       return doDeriveTheme(input);
+    case 'insert_design_element':
+      return doInsertDesignElement(input);
     case 'generate_image':
       return doGenerateImage(input);
     case 'create_data_table':
@@ -316,6 +321,75 @@ function doDeriveTheme(input: any): string {
   return `derived theme ${theme.name} from ${input.primary}`;
 }
 
+function doInsertDesignElement(input: any): string {
+  const { slide_id, kind, x, y, w, h } = input;
+  if (!slide_id || !kind) return 'missing required fields';
+  const base = {
+    id: newId('blk'),
+    z: 1,
+    x: Number.isFinite(x) ? x : 240,
+    y: Number.isFinite(y) ? y : 240,
+    w: Math.max(1, Number.isFinite(w) ? w : 600),
+    h: Math.max(1, Number.isFinite(h) ? h : 320),
+    opacity: typeof input.opacity === 'number' ? input.opacity : undefined,
+  };
+  let block: Block;
+  if (kind === 'svg') {
+    const svg = sanitizeSvg(input.svg_code);
+    if (!svg) return 'svg_code required for svg element';
+    block = {
+      ...base,
+      type: 'image',
+      src: svgToDataUrl(svg),
+      alt: input.alt ?? 'AI generated SVG design element',
+      fit: 'fill',
+      cornerRadius: 0,
+    } as Block;
+  } else if (kind === 'icon') {
+    block = {
+      ...base,
+      type: 'icon',
+      iconName: input.icon_name ?? 'Sparkles',
+      color: input.color ?? '#0F172A',
+      strokeWidth: input.strokeWidth ?? 2,
+    } as Block;
+  } else if (kind === 'line') {
+    block = {
+      ...base,
+      type: 'divider',
+      color: input.color ?? '#CBD5E1',
+      thickness: input.strokeWidth ?? Math.max(2, Math.min(base.h, 8)),
+      style: input.style === 'dashed' || input.style === 'dotted' ? input.style : 'solid',
+    } as Block;
+  } else {
+    block = {
+      ...base,
+      type: 'shape',
+      shape: input.shape ?? 'rectangle',
+      fill: input.fill ?? 'transparent',
+      stroke: input.color,
+      strokeWidth: input.strokeWidth ?? 0,
+    } as Block;
+  }
+  useDeckStore.getState().addBlock(slide_id, block, { layer: input.layer });
+  return `${kind} design element inserted on ${slide_id}`;
+}
+
+function sanitizeSvg(svg: unknown): string {
+  if (typeof svg !== 'string') return '';
+  const trimmed = svg.trim();
+  if (!trimmed.startsWith('<svg') || !trimmed.includes('</svg>')) return '';
+  return trimmed
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\son\w+="[^"]*"/gi, '')
+    .replace(/\son\w+='[^']*'/gi, '')
+    .replace(/javascript:/gi, '');
+}
+
+function svgToDataUrl(svg: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 async function doGenerateImage(input: any): Promise<string> {
   const { generateImage } = await import('./imageGen');
   try {
@@ -332,9 +406,9 @@ async function doGenerateImage(input: any): Promise<string> {
       z: 1,
       x, y, w, h,
       src: dataUrl,
-      fit: 'cover',
-      cornerRadius: 8,
-    } as any);
+      fit: input.fit ?? 'cover',
+      cornerRadius: input.cornerRadius ?? 8,
+    } as any, { layer: input.layer });
     return `image inserted on ${slideId}`;
   } catch (e) {
     return `image generation failed: ${e instanceof Error ? e.message : String(e)}`;

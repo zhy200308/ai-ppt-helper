@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Database } from 'lucide-react';
+import { Database, Plus, Trash2 } from 'lucide-react';
 import { useShallow } from 'zustand/shallow';
 import { useDeckStore, useSelectedBlocks, useActiveSlide } from '../../core/store/deck';
 import type { Block, ChartBlock, ImageBlock, ShapeBlock, TableBlock, TextBlock, ProgressBlock, KpiCardBlock, BadgeBlock, MathBlock, GalleryBlock } from '../../core/schema/types';
@@ -215,6 +215,64 @@ function ChartProps({ block, onChange, onOpenTables }: { block: ChartBlock; onCh
   const ref = block.dataRef;
   const ids = Object.keys(tables);
   const tbl = ref ? tables[ref.tableId] : undefined;
+  const categories = block.categories?.length ? block.categories : ['Q1', 'Q2', 'Q3', 'Q4'];
+  const series = block.series?.length ? block.series : [{ name: 'Series A', data: categories.map(() => 0) }];
+
+  const updateInlineCell = (seriesIndex: number, categoryIndex: number, value: number) => {
+    onChange({
+      series: series.map((s, si) => si === seriesIndex
+        ? { ...s, data: categories.map((_, ci) => ci === categoryIndex ? value : (s.data[ci] ?? 0)) }
+        : { ...s, data: categories.map((_, ci) => s.data[ci] ?? 0) }),
+      categories,
+    });
+  };
+
+  const updateCategory = (index: number, value: string) => {
+    onChange({ categories: categories.map((c, i) => i === index ? value : c) });
+  };
+
+  const addCategory = () => {
+    onChange({
+      categories: [...categories, `类别 ${categories.length + 1}`],
+      series: series.map((s) => ({ ...s, data: [...s.data, 0] })),
+    });
+  };
+
+  const removeCategory = (index: number) => {
+    const nextCategories = categories.filter((_, i) => i !== index);
+    onChange({
+      categories: nextCategories,
+      series: series.map((s) => ({ ...s, data: s.data.filter((_, i) => i !== index) })),
+    });
+  };
+
+  const addSeries = () => {
+    onChange({
+      categories,
+      series: [...series, { name: `Series ${series.length + 1}`, data: categories.map(() => 0) }],
+    });
+  };
+
+  const removeSeries = (index: number) => {
+    const next = series.filter((_, i) => i !== index);
+    onChange({ series: next.length ? next : [{ name: 'Series A', data: categories.map(() => 0) }], categories });
+  };
+
+  const createDataTableFromInline = () => {
+    const id = `dt_${Date.now().toString(36)}`;
+    const columns = [
+      { key: 'category', label: '类别', type: 'string' as const },
+      ...series.map((s, i) => ({ key: `series_${i + 1}`, label: s.name || `系列 ${i + 1}`, type: 'number' as const })),
+    ];
+    const rows = categories.map((category, ci) => {
+      const row: Record<string, string | number> = { category };
+      series.forEach((s, si) => { row[`series_${si + 1}`] = s.data[ci] ?? 0; });
+      return row;
+    });
+    useDeckStore.getState().upsertDataTable({ id, name: '柱状图数据', columns, rows, updatedAt: Date.now(), source: 'chart-inline' });
+    onChange({ dataRef: { tableId: id, xColumn: 'category' } });
+  };
+
   return (
     <div className="panel-section">
       <div className="panel-title">图表类型</div>
@@ -270,6 +328,60 @@ function ChartProps({ block, onChange, onOpenTables }: { block: ChartBlock; onCh
             </>
           )}
         </>
+      )}
+
+      {!ref && (
+        <div className="inline-chart-editor">
+          <div className="panel-title" style={{ marginTop: 12 }}>内联行列数据</div>
+          <div className="row">
+            <button className="btn-sm" onClick={addCategory}><Plus size={10}/> 行</button>
+            <button className="btn-sm" onClick={addSeries}><Plus size={10}/> 系列列</button>
+            <button className="btn-sm" onClick={createDataTableFromInline}>转为数据表</button>
+          </div>
+          <div className="dt-grid-wrap chart-grid-wrap">
+            <table className="dt-grid">
+              <thead>
+                <tr>
+                  <th>类别</th>
+                  {series.map((s, si) => (
+                    <th key={si}>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <input
+                          value={s.name}
+                          onChange={(e) => onChange({ series: series.map((item, i) => i === si ? { ...item, name: e.target.value } : item), categories })}
+                          style={{ minWidth: 70 }}
+                        />
+                        <button className="icon-btn xs danger" onClick={() => removeSeries(si)} title="删除系列"><Trash2 size={9}/></button>
+                      </div>
+                    </th>
+                  ))}
+                  <th className="dt-addcol" />
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((cat, ci) => (
+                  <tr key={ci}>
+                    <td>
+                      <input value={cat} onChange={(e) => updateCategory(ci, e.target.value)} />
+                    </td>
+                    {series.map((s, si) => (
+                      <td key={si}>
+                        <input
+                          type="number"
+                          value={s.data[ci] ?? 0}
+                          onChange={(e) => updateInlineCell(si, ci, Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : 0)}
+                        />
+                      </td>
+                    ))}
+                    <td className="dt-rownum">
+                      <button className="icon-btn xs danger" onClick={() => removeCategory(ci)} title="删除行"><Trash2 size={9}/></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   );

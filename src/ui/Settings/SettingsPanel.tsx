@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Server, Globe, Paintbrush, Wrench, Users, ShieldCheck } from 'lucide-react';
+import { X, Server, Globe, Paintbrush, Wrench, Users, ShieldCheck, Grid3X3 } from 'lucide-react';
 import { useSettingsStore } from '../../core/store/settings';
 import { ProvidersSection } from './ProvidersSection';
 import { ProxySection } from './ProxySection';
@@ -7,6 +7,7 @@ import { ThemesSection } from './ThemesSection';
 import { SkillsSection } from './SkillsSection';
 import { CollabSection } from './CollabSection';
 import { AuditSection } from './AuditSection';
+import { CapabilityMatrixSection } from './CapabilityMatrixSection';
 import { useBackdropClose } from '../components/useBackdropClose';
 
 interface Props {
@@ -14,7 +15,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = 'providers' | 'proxy' | 'themes' | 'skills' | 'collab' | 'audit';
+type Tab = 'providers' | 'proxy' | 'themes' | 'skills' | 'collab' | 'audit' | 'capabilities';
 
 export function SettingsPanel({ open, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('providers');
@@ -54,6 +55,9 @@ export function SettingsPanel({ open, onClose }: Props) {
             <button className={tab === 'collab' ? 'active' : ''} onClick={() => setTab('collab')}>
               <Users size={14}/> 协同
             </button>
+            <button className={tab === 'capabilities' ? 'active' : ''} onClick={() => setTab('capabilities')}>
+              <Grid3X3 size={14}/> 能力矩阵
+            </button>
             <button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}>
               <ShieldCheck size={14}/> 导出审计
             </button>
@@ -66,6 +70,7 @@ export function SettingsPanel({ open, onClose }: Props) {
             {tab === 'themes' && <ThemesSection />}
             {tab === 'skills' && <SkillsSection />}
             {tab === 'collab' && <CollabSection />}
+            {tab === 'capabilities' && <CapabilityMatrixSection />}
             {tab === 'audit' && <AuditSection />}
             {tab === 'proxy' && <ProxySection />}
           </main>

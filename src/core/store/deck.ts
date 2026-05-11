@@ -3,6 +3,7 @@ import { subscribeWithSelector } from 'zustand/middleware';
 import { useShallow } from 'zustand/shallow';
 import { enablePatches, produceWithPatches, applyPatches, type Patch as ImmerPatch } from 'immer';
 import type { Block, DataTable, Deck, ID, Selection, Slide, ThemeSpec } from '../schema/types';
+import { getCollabProvider } from '../../integrations/collab';
 import { createDeck, createSlide, newId } from '../schema/factory';
 
 enablePatches();
@@ -14,6 +15,15 @@ interface HistoryEntry {
   undo: ImmerPatch[];
   label: string;
   ts: number;
+}
+
+export interface LayerPlacement {
+  mode?: 'top' | 'middle' | 'bottom' | 'above' | 'below';
+  targetBlockId?: ID;
+}
+
+interface AddBlockOptions {
+  layer?: LayerPlacement;
 }
 
 export interface DeckSliceState {
@@ -48,7 +58,7 @@ export interface DeckSliceActions {
   reorderSlides: (fromIndex: number, toIndex: number) => void;
   setSlideBackground: (slideId: ID, bg: Slide['background']) => void;
   // blocks
-  addBlock: (slideId: ID, block: Block) => void;
+  addBlock: (slideId: ID, block: Block, options?: AddBlockOptions) => void;
   removeBlocks: (slideId: ID, blockIds: ID[]) => void;
   updateBlock: (slideId: ID, blockId: ID, patch: Partial<Block>, options?: { transient?: boolean }) => void;
   updateBlocks: (slideId: ID, updates: { id: ID; patch: Partial<Block> }[], options?: { transient?: boolean }) => void;
@@ -99,6 +109,7 @@ export const useDeckStore = create<DeckStore>()(
         draft.meta.updatedAt = Date.now();
       });
       if (patches.length === 0) return;
+      if (!options?.transient) getCollabProvider()?.applyLocalPatch(next);
       if (options?.transient) {
         set({ deck: next as Deck, dirty: true });
         return;
@@ -214,12 +225,13 @@ export const useDeckStore = create<DeckStore>()(
       });
     },
 
-    addBlock: (slideId, block) => {
+    addBlock: (slideId, block, options) => {
       get().mutate('Add block', (draft) => {
         const s = draft.slides.find((x) => x.id === slideId);
         if (!s) return;
-        const maxZ = s.blocks.reduce((m, b) => Math.max(m, b.z), 0);
-        s.blocks.push({ ...block, z: maxZ + 1 });
+        const z = resolveInsertedZ(s.blocks, options?.layer);
+        s.blocks.push({ ...block, z });
+        normalizeLayerOrder(s.blocks);
       });
       set({ selection: { slideId, blockIds: [block.id] } });
     },
@@ -389,6 +401,25 @@ export const useDeckStore = create<DeckStore>()(
     markSaved: () => set({ dirty: false }),
   })),
 );
+
+function resolveInsertedZ(blocks: Block[], placement?: LayerPlacement): number {
+  if (blocks.length === 0) return 1;
+  const sorted = [...blocks].sort((a, b) => a.z - b.z);
+  const minZ = sorted[0].z;
+  const maxZ = sorted[sorted.length - 1].z;
+  if (!placement || !placement.mode || placement.mode === 'top') return maxZ + 1;
+  if (placement.mode === 'bottom') return minZ - 1;
+  if (placement.mode === 'middle') return sorted[Math.floor(sorted.length / 2)]?.z ?? maxZ + 1;
+  const targetIndex = sorted.findIndex((b) => b.id === placement.targetBlockId);
+  if (targetIndex < 0) return maxZ + 1;
+  return placement.mode === 'above' ? sorted[targetIndex].z + 0.5 : sorted[targetIndex].z - 0.5;
+}
+
+function normalizeLayerOrder(blocks: Block[]) {
+  [...blocks]
+    .sort((a, b) => a.z - b.z)
+    .forEach((b, i) => { b.z = i + 1; });
+}
 
 export function useActiveSlide(): Slide | null {
   return useDeckStore((s) => {

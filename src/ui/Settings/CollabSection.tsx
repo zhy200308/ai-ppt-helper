@@ -14,7 +14,7 @@ export function CollabSection() {
     setError(null);
     try {
       const { activateYjsCollab } = await import('../../integrations/yjsCollab');
-      await activateYjsCollab({
+      const provider = await activateYjsCollab({
         url,
         room,
         identity: {
@@ -23,6 +23,9 @@ export function CollabSection() {
           color: '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0'),
         },
       });
+      const { useDeckStore } = await import('../../core/store/deck');
+      provider.applyLocalPatch(useDeckStore.getState().deck);
+      window.dispatchEvent(new Event('collab:activated'));
       setConnected(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -35,6 +38,7 @@ export function CollabSection() {
     const c = (globalThis as any).__COLLAB__;
     c?.disconnect?.();
     (globalThis as any).__COLLAB__ = null;
+    window.dispatchEvent(new Event('collab:activated'));
     setConnected(false);
   };
 
@@ -58,6 +62,13 @@ export function CollabSection() {
         <span className="field-label">显示名</span>
         <input value={name} onChange={(e) => setName(e.target.value)} disabled={connected}/>
       </label>
+
+      <div className="collab-status-card">
+        <div><strong>{connected ? '已连接' : '未连接'}</strong></div>
+        <div>房间：{room}</div>
+        <div>身份：{name}</div>
+        <div>{connected ? '本地编辑会同步到同房间成员，画布会显示远端光标。' : '连接后会把当前 deck 作为房间快照同步。'}</div>
+      </div>
 
       {error && <div className="form-error">{error}</div>}
 

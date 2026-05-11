@@ -17,6 +17,7 @@ export function Presenter({ onClose }: { onClose: () => void }) {
   const [drawMode, setDrawMode] = useState(false);
   const [recording, setRecording] = useState(false);
   const startedAt = useRef(Date.now());
+  const viewportRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
   const currentStroke = useRef<InkStroke | null>(null);
@@ -55,13 +56,19 @@ export function Presenter({ onClose }: { onClose: () => void }) {
   const [scale, setScale] = useState(1);
   useEffect(() => {
     const calc = () => {
-      const sx = window.innerWidth / deck.meta.width;
-      const sy = (window.innerHeight - 80) / deck.meta.height;
-      setScale(Math.min(sx, sy));
+      const viewport = viewportRef.current;
+      const width = viewport?.clientWidth ?? window.innerWidth;
+      const height = viewport?.clientHeight ?? Math.max(1, window.innerHeight - 80);
+      setScale(Math.min(width / deck.meta.width, height / deck.meta.height));
     };
     calc();
+    const observer = viewportRef.current ? new ResizeObserver(calc) : null;
+    if (viewportRef.current) observer?.observe(viewportRef.current);
     window.addEventListener('resize', calc);
-    return () => window.removeEventListener('resize', calc);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', calc);
+    };
   }, [deck.meta.width, deck.meta.height]);
 
   const onMouseMove = (e: React.MouseEvent) => {
@@ -73,12 +80,8 @@ export function Presenter({ onClose }: { onClose: () => void }) {
   const clientToDeck = useCallback((cx: number, cy: number) => {
     if (!stageRef.current) return { x: 0, y: 0 };
     const rect = stageRef.current.getBoundingClientRect();
-    const cw = deck.meta.width * scale;
-    const ch = deck.meta.height * scale;
-    const ox = (rect.width - cw) / 2 + rect.left;
-    const oy = (rect.height - ch) / 2 + rect.top;
-    return { x: (cx - ox) / scale, y: (cy - oy) / scale };
-  }, [deck.meta.width, deck.meta.height, scale]);
+    return { x: (cx - rect.left) / scale, y: (cy - rect.top) / scale };
+  }, [scale]);
 
   const beginStroke = (e: React.PointerEvent) => {
     if (!drawMode) return;
@@ -197,64 +200,68 @@ export function Presenter({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="presenter">
-      <div className="presenter-stage" ref={stageRef} onMouseMove={onMouseMove}>
+      <div className="presenter-stage" ref={viewportRef}>
         <div
-          className="presenter-canvas"
+          className="presenter-frame"
+          ref={stageRef}
+          onMouseMove={onMouseMove}
           style={{
-            width: deck.meta.width,
-            height: deck.meta.height,
-            transform: `scale(${scale})`,
-            transformOrigin: 'center center',
-            position: 'relative',
-            background: slide.background?.color ?? '#fff',
-            boxShadow: '0 12px 60px rgba(0,0,0,0.4)',
+            width: deck.meta.width * scale,
+            height: deck.meta.height * scale,
           }}
         >
-          {[...slide.blocks]
-            .sort((a, b) => a.z - b.z)
-            .map((block) => (
-              <div
-                key={block.id}
-                style={{
-                  position: 'absolute',
-                  left: block.x,
-                  top: block.y,
-                  width: block.w,
-                  height: block.h,
-                  transform: block.rotation ? `rotate(${block.rotation}deg)` : undefined,
-                  opacity: block.opacity ?? 1,
-                  visibility: block.hidden ? 'hidden' : 'visible',
-                }}
-              >
-                <BlockRenderer block={block} presenting />
-              </div>
-            ))}
-        </div>
-        {laser && laserOn && (
           <div
-            className="presenter-laser"
-            style={{ left: laser.x - 10, top: laser.y - 10 }}
-          />
-        )}
-        {drawMode && (
-          <canvas
-            ref={drawCanvasRef}
+            className="presenter-canvas"
             style={{
-              position: 'absolute',
-              left: '50%', top: '50%',
-              width: deck.meta.width * scale,
-              height: deck.meta.height * scale,
-              transform: 'translate(-50%, -50%)',
-              cursor: 'crosshair',
-              touchAction: 'none',
-              zIndex: 10,
+              width: deck.meta.width,
+              height: deck.meta.height,
+              transform: `scale(${scale})`,
+              transformOrigin: '0 0',
+              position: 'relative',
+              ...backgroundStyle(slide),
             }}
-            onPointerDown={beginStroke}
-            onPointerMove={extendStroke}
-            onPointerUp={endStroke}
-            onPointerLeave={endStroke}
-          />
-        )}
+          >
+            {[...slide.blocks]
+              .sort((a, b) => a.z - b.z)
+              .map((block) => (
+                <div
+                  key={block.id}
+                  style={{
+                    position: 'absolute',
+                    left: block.x,
+                    top: block.y,
+                    width: block.w,
+                    height: block.h,
+                    transform: block.rotation ? `rotate(${block.rotation}deg)` : undefined,
+                    opacity: block.opacity ?? 1,
+                    visibility: block.hidden ? 'hidden' : 'visible',
+                  }}
+                >
+                  <BlockRenderer block={block} presenting />
+                </div>
+              ))}
+          </div>
+          {laser && laserOn && (
+            <div
+              className="presenter-laser"
+              style={{ left: laser.x - 10, top: laser.y - 10 }}
+            />
+          )}
+          {drawMode && (
+            <canvas
+              ref={drawCanvasRef}
+              className="presenter-ink-canvas"
+              style={{
+                width: deck.meta.width * scale,
+                height: deck.meta.height * scale,
+              }}
+              onPointerDown={beginStroke}
+              onPointerMove={extendStroke}
+              onPointerUp={endStroke}
+              onPointerLeave={endStroke}
+            />
+          )}
+        </div>
       </div>
 
       {showNotes && slide.notes && (
@@ -307,6 +314,27 @@ export function Presenter({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
+}
+
+function backgroundStyle(slide: import('../../core/schema/types').Slide): React.CSSProperties {
+  const bg = slide.background ?? {};
+  if (bg.image) {
+    return {
+      backgroundImage: `url(${bg.image})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundColor: bg.color ?? '#fff',
+    };
+  }
+  if (bg.gradient) {
+    const stops = bg.gradient.stops.map((s) => `${s.color} ${(s.offset * 100).toFixed(0)}%`).join(', ');
+    return {
+      background: bg.gradient.type === 'linear'
+        ? `linear-gradient(${bg.gradient.angle ?? 0}deg, ${stops})`
+        : `radial-gradient(circle, ${stops})`,
+    };
+  }
+  return { backgroundColor: bg.color ?? '#fff' };
 }
 
 function toggleFullscreen() {

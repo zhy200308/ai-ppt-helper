@@ -252,6 +252,33 @@
   color: var(--text-muted);
 }
 
+.collab-cursor {
+  position: absolute;
+  pointer-events: none;
+  z-index: 10000;
+  width: 0;
+  height: 0;
+}
+.collab-cursor::before {
+  content: '';
+  position: absolute;
+  border-left: 8px solid currentColor;
+  border-top: 8px solid currentColor;
+  border-right: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+}
+.collab-cursor span {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-card);
+}
+
 /* ============================================================
    Right pane (properties)
    ============================================================ */
@@ -678,6 +705,49 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+.collab-status-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: grid;
+  gap: 4px;
+}
+.collab-status-card strong { color: var(--text-default); }
+.capability-matrix { display: grid; gap: 12px; }
+.cap-group {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #fff;
+}
+.cap-area {
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.cap-rows { display: grid; }
+.cap-row {
+  display: grid;
+  grid-template-columns: 150px 90px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.cap-row:last-child { border-bottom: none; }
+.cap-name { font-weight: 600; color: var(--text-default); }
+.cap-status { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); }
+.cap-detail { color: var(--text-muted); line-height: 1.4; }
+.cap-ok { color: var(--success); }
+.cap-basic { color: var(--warn); }
+.cap-warn { color: var(--danger); }
+
 /* ============================================================
    Data tables editor (right pane)
    ============================================================ */
@@ -720,6 +790,12 @@
 }
 .dt-addcol { width: 70px; }
 .dt-hint { font-size: 11px; color: var(--text-muted); margin-top: 8px; display: inline-flex; align-items: center; gap: 4px; }
+.inline-chart-editor { margin-top: 8px; }
+.chart-grid-wrap { max-height: 280px; }
+.dt-grid th input {
+  width: 100%; min-width: 60px; padding: 4px; border: 1px solid var(--border-subtle);
+  border-radius: 3px; font: inherit; background: #fff;
+}
 
 /* ============================================================
    Tool timeline + carried content (bubble extras)
@@ -864,7 +940,13 @@
   position: relative;
   overflow: hidden;
 }
-.presenter-canvas { transform-origin: center center; }
+.presenter-frame {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  box-shadow: 0 12px 60px rgba(0,0,0,0.4);
+}
+.presenter-canvas { transform-origin: 0 0; }
 .presenter-laser {
   position: absolute;
   width: 20px;
@@ -875,6 +957,13 @@
   mix-blend-mode: screen;
   box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
   z-index: 5;
+}
+.presenter-ink-canvas {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+  z-index: 10;
 }
 .presenter-notes {
   position: fixed;

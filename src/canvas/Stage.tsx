@@ -8,6 +8,7 @@ import { computeSnap, blockToRect, type SnapGuide } from './interactions/snap';
 import { bindPointerDrag } from './interactions/usePointerDrag';
 import { useDropPaste } from './interactions/useDropPaste';
 import { rectsBoundingBox, rectsIntersect, clamp } from '../utils/math';
+import { reportCollabCursor, useCollabBinding } from '../integrations/collabBinding';
 
 const SNAP_THRESHOLD = 6;
 
@@ -30,6 +31,7 @@ export function Stage() {
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [editingBlockId, setEditingBlockId] = useState<ID | null>(null);
   const updateBlock = useDeckStore((s) => s.updateBlock);
+  const peers = useCollabBinding();
 
   // Auto-fit on first mount and on container resize
   useEffect(() => {
@@ -88,6 +90,16 @@ export function Stage() {
   );
 
   useDropPaste(containerRef, clientToDeck);
+
+  const onStagePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!slide) return;
+    const p = clientToDeck(e.clientX, e.clientY);
+    reportCollabCursor(Math.round(p.x), Math.round(p.y), slide.id);
+  }, [clientToDeck, slide]);
+
+  const onStagePointerLeave = useCallback(() => {
+    reportCollabCursor(null, null, slide?.id);
+  }, [slide?.id]);
 
   // Marquee selection on empty-canvas drag
   useEffect(() => {
@@ -229,6 +241,8 @@ export function Stage() {
       <div
         ref={stageRef}
         className="stage"
+        onPointerMove={onStagePointerMove}
+        onPointerLeave={onStagePointerLeave}
         style={{
           width: deck.meta.width,
           height: deck.meta.height,
@@ -310,6 +324,16 @@ export function Stage() {
                 : { top: g.position - 0.5 / zoom, left: g.start, height: 1 / zoom, width: g.end - g.start }),
             }}
           />
+        ))}
+
+        {!presenting && peers.filter((peer) => peer.cursor?.slideId === slide.id).map((peer) => (
+          <div
+            key={peer.id}
+            className="collab-cursor"
+            style={{ left: peer.cursor!.x, top: peer.cursor!.y, color: peer.color }}
+          >
+            <span style={{ background: peer.color }}>{peer.name}</span>
+          </div>
         ))}
 
         {marquee && (
