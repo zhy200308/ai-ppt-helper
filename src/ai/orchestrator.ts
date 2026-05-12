@@ -14,6 +14,7 @@ import { validateSlide } from '../generation/validator';
 import { captureSnapshot } from '../core/persistence/snapshots';
 import { DECK_SIZE } from '../core/schema/factory';
 import type { LayoutKey, SlideContent } from '../generation/types';
+import type { ChatContextRef, ChatContextSnapshot } from './contextSerializer';
 
 const SYSTEM_PROMPT = `You are an industrial-grade AI PowerPoint co-pilot. You design slides like
 a senior product designer: bold typography, restrained palettes, tasteful spacing.
@@ -73,9 +74,18 @@ Whenever the user asks for a chart, pie, bar, line, or numeric table:
 - <= 6 bullets per body slide, each <= 14 words
 - Use parallel structure across bullets (start with same part of speech)
 - Numbers: write them out for impact ("87%" not "approximately 87 percent")
-- When @slide:N or @block:abc references appear, they are the edit target
+- When @slide:N, @block:abc, or PPT context references appear, they are the edit target
 - The validator will clamp blocks to the canvas and fix contrast; do not
   worry about pixel coordinates
+
+# PPT context
+User messages may include a <PPT_CONTEXT> block before <USER_REQUEST>.
+Use this context as the authoritative current deck/slide/block state.
+When context scope is "deck", reason across the whole presentation.
+When context scope is "slide", focus edits and answers on that slide.
+When context scope is "selection", focus only on the listed selected blocks unless the user asks otherwise.
+Use the included slide_id and block_id values when calling tools.
+Do not assume unseen slides/blocks exist if they are not present in the context.
 
 - For decorative backgrounds, icons, dividers, lines, and generated SVG visuals, call insert_design_element with exact x/y/w/h plus a layer placement. Use SVG code for generated visuals when possible so the frontend can parse it as an image block.
 - Use layer.mode="bottom" for background decorations, "middle" for supporting visuals, "top" for foreground accents, or "above"/"below" with targetBlockId when positioning relative to a specific block.
@@ -105,7 +115,9 @@ export interface ChatSessionMessage {
   role: 'user' | 'assistant' | 'system';
   text: string;
   attachments?: ChatSessionAttachment[];
-  contextRefs?: { kind: 'slide' | 'block'; id: string; label: string }[];
+  contextRefs?: ChatContextRef[];
+  contextText?: string;
+  contextSnapshot?: ChatContextSnapshot;
   // Tool calls executed while this assistant message was being streamed.
   // Rendered as a collapsible "活动" timeline below the text.
   toolEvents?: ToolEvent[];
@@ -119,25 +131,48 @@ export interface ChatRunResult {
   done: Promise<void>;
 }
 
+const MAX_HISTORY_MESSAGES = 12;
+const MAX_ATTACHMENT_CHARS = 6000;
+const MAX_TOOL_RESULT_CHARS = 2000;
+
 export function buildChatHistory(session: ChatSessionMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [{ role: 'system', content: SYSTEM_PROMPT }];
-  for (const m of session) {
+  const recent = session.slice(-MAX_HISTORY_MESSAGES);
+  for (const m of recent) {
     if (m.role === 'system') continue;
     let content = m.text;
-    if (m.contextRefs?.length) {
+    if (m.status === 'error') {
+      content = content ? `[Previous failed assistant response omitted: ${content.slice(0, 500)}]` : '';
+    }
+    if (m.contextSnapshot?.text.trim()) {
+      content = [
+        m.contextSnapshot.text,
+        '',
+        '<USER_REQUEST>',
+        content,
+        '</USER_REQUEST>',
+      ].join('\n');
+    } else if (m.contextText?.trim()) {
+      content = [
+        m.contextText,
+        '',
+        '<USER_REQUEST>',
+        content,
+        '</USER_REQUEST>',
+      ].join('\n');
+    } else if (m.contextRefs?.length) {
       const refs = m.contextRefs.map((r) => `[${r.kind}:${r.id}]`).join(' ');
       content = `${refs} ${content}`;
     }
     const attachments: ChatAttachment[] = [];
     for (const a of m.attachments ?? []) {
-      if (a.dataUrl && a.mime.startsWith('image/')) {
+      if (a.dataUrl && a.mime.startsWith('image/') && m === recent[recent.length - 1]) {
         attachments.push({ kind: 'image', mediaType: a.mime, dataUrl: a.dataUrl });
-      } else if (a.dataUrl && a.mime === 'application/pdf') {
+      } else if (a.dataUrl && a.mime === 'application/pdf' && m === recent[recent.length - 1]) {
         attachments.push({ kind: 'document', mediaType: a.mime, dataUrl: a.dataUrl, name: a.name });
       } else if (a.previewText) {
-        attachments.push({ kind: 'text', name: a.name, mediaType: a.mime, text: a.previewText.slice(0, 12000) });
+        attachments.push({ kind: 'text', name: a.name, mediaType: a.mime, text: a.previewText.slice(0, MAX_ATTACHMENT_CHARS) });
       } else if (a.dataUrl) {
-        // Unknown binary — degrade to a name-only text marker.
         attachments.push({ kind: 'text', name: a.name, mediaType: a.mime, text: `[Binary attachment ${a.name}]` });
       }
     }
@@ -594,7 +629,7 @@ export async function runChat(opts: {
         opts.onToolCall(t.id, t.name, t.input);
         const r = await applyTool(t.name, t.input);
         opts.onToolResult(t.id, t.name, r);
-        return { role: 'tool' as const, content: r, toolCallId: t.id };
+        return { role: 'tool' as const, content: r.slice(0, MAX_TOOL_RESULT_CHARS), toolCallId: t.id };
       })),
     ];
   }

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Send, Paperclip, Square, X, AtSign, Sparkles, Check, Clock, Plus, Trash2, ChevronLeft, Eye, EyeOff,
 } from 'lucide-react';
 import { useDeckStore, useSelectedBlocks, useActiveSlide } from '../../core/store/deck';
+import type { Block, Deck, Slide } from '../../core/schema/types';
 import { runChat, type ChatSessionMessage } from '../../ai/orchestrator';
+import { buildChatContextSnapshot, type ChatContextRef, type ChatContextScope, type ChatContextSnapshot } from '../../ai/contextSerializer';
 import { extractFile, type ExtractedFile } from '../../utils/files';
 import { isMac } from '../components/useBackdropClose';
 import { LivePreview } from './LivePreview';
@@ -39,7 +41,9 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
 
   const slide = useActiveSlide();
   const selected = useSelectedBlocks();
-  const [includeContext, setIncludeContext] = useState(true);
+  const [contextScope, setContextScope] = useState<ChatContextScope>('slide');
+  const deck = useDeckStore((s) => s.deck);
+  const contextPreview = useMemo(() => buildContextPreview(deck, slide, selected, contextScope), [deck, slide, selected, contextScope]);
   const macConfirm = isMac();
   const [confirmingSend, setConfirmingSend] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
@@ -116,13 +120,13 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
     if (!input.trim() && files.length === 0) return;
     if (busy) return;
 
-    const ctxRefs: ChatSessionMessage['contextRefs'] = [];
-    if (includeContext && slide) {
-      ctxRefs.push({ kind: 'slide', id: slide.id, label: `slide ${useDeckStore.getState().deck.slides.findIndex((s) => s.id === slide.id) + 1}` });
-      for (const b of selected) {
-        ctxRefs.push({ kind: 'block', id: b.id, label: `${b.type} ${b.id.slice(0, 6)}` });
-      }
-    }
+    const deckState = useDeckStore.getState().deck;
+    const snapshot = buildChatContextSnapshot({
+      scope: contextScope,
+      deck: deckState,
+      activeSlideId: slide?.id ?? null,
+      selectedBlockIds: selected.map((b) => b.id),
+    });
 
     const userMsg: ChatSessionMessage = {
       id: `u_${Date.now()}`,
@@ -134,7 +138,9 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
         previewText: f.previewText,
         dataUrl: f.dataUrl,
       })),
-      contextRefs: ctxRefs,
+      contextRefs: snapshot?.refs ?? [],
+      contextSnapshot: snapshot,
+      contextText: snapshot?.text,
       ts: Date.now(),
       status: 'done',
     };
@@ -156,37 +162,44 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
 
     let buffer = '';
 
-    await runChat({
-      history: next.filter((m) => m.id !== assistant.id),
-      signal: ac.signal,
-      onTextDelta: (d) => {
-        buffer += d;
-        setMessages((cur) => updateAssistant(cur, assistant.id, { text: buffer, status: 'streaming' }));
-      },
-      onToolCall: (id, name, input) => {
-        setMessages((cur) => updateAssistant(cur, assistant.id, {
-          toolEvents: [
-            ...((cur.find((m) => m.id === assistant.id)?.toolEvents) ?? []),
-            { id, name, input, status: 'running', ts: Date.now() },
-          ],
-        }));
-      },
-      onToolResult: (id, _name, result) => {
-        setMessages((cur) => updateAssistant(cur, assistant.id, {
-          toolEvents: ((cur.find((m) => m.id === assistant.id)?.toolEvents) ?? []).map((t) =>
-            t.id === id ? { ...t, result, status: result.startsWith('Error') || result.includes('failed') ? 'error' : 'done' } : t,
-          ),
-        }));
-      },
-      onError: (msg) => {
-        setMessages((cur) => updateAssistant(cur, assistant.id, { text: msg, status: 'error', error: msg }));
-      },
-    });
-
-    setMessages((cur) => updateAssistant(cur, assistant.id, { status: 'done' }));
-    setBusy(false);
-    abortRef.current = null;
-  }, [input, files, busy, messages, slide, selected, includeContext]);
+    try {
+      await runChat({
+        history: next.filter((m) => m.id !== assistant.id),
+        signal: ac.signal,
+        onTextDelta: (d) => {
+          buffer += d;
+          setMessages((cur) => updateAssistant(cur, assistant.id, { text: buffer, status: 'streaming' }));
+        },
+        onToolCall: (id, name, input) => {
+          setMessages((cur) => updateAssistant(cur, assistant.id, {
+            toolEvents: [
+              ...((cur.find((m) => m.id === assistant.id)?.toolEvents) ?? []),
+              { id, name, input, status: 'running', ts: Date.now() },
+            ],
+          }));
+        },
+        onToolResult: (id, _name, result) => {
+          setMessages((cur) => updateAssistant(cur, assistant.id, {
+            toolEvents: ((cur.find((m) => m.id === assistant.id)?.toolEvents) ?? []).map((t) =>
+              t.id === id ? { ...t, result, status: result.startsWith('Error') || result.includes('failed') ? 'error' : 'done' } : t,
+            ),
+          }));
+        },
+        onError: (msg) => {
+          setMessages((cur) => updateAssistant(cur, assistant.id, { text: msg, status: 'error', error: msg }));
+        },
+      });
+      setMessages((cur) => cur.map((m) =>
+        m.id === assistant.id && m.status !== 'error' ? { ...m, status: 'done' } : m,
+      ));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMessages((cur) => updateAssistant(cur, assistant.id, { text: msg, status: 'error', error: msg }));
+    } finally {
+      setBusy(false);
+      abortRef.current = null;
+    }
+  }, [input, files, busy, messages, slide, selected, contextScope]);
 
   const triggerSend = useCallback(() => {
     if (busy) return;
@@ -297,19 +310,30 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="chat-context">
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={includeContext}
-                onChange={(e) => setIncludeContext(e.target.checked)}
-              />
-              <AtSign size={11}/>
-              携带上下文
-              {slide && <span className="ctx-chip">slide {useDeckStore.getState().deck.slides.findIndex((s) => s.id === slide.id) + 1}</span>}
-              {selected.map((b) => (
-                <span className="ctx-chip" key={b.id}>{b.type}:{b.id.slice(0, 6)}</span>
-              ))}
-            </label>
+            <div className="context-scope-row">
+              <span className="context-label"><AtSign size={11}/> 携带上下文</span>
+              <button className={contextScope === 'none' ? 'ctx-scope active' : 'ctx-scope'} onClick={() => setContextScope('none')}>不携带</button>
+              <button
+                className={contextScope === 'selection' ? 'ctx-scope active' : 'ctx-scope'}
+                onClick={() => setContextScope('selection')}
+                disabled={!slide || selected.length === 0}
+              >
+                选中组件
+              </button>
+              <button
+                className={contextScope === 'slide' ? 'ctx-scope active' : 'ctx-scope'}
+                onClick={() => setContextScope('slide')}
+                disabled={!slide}
+              >
+                当前页
+              </button>
+              <button className={contextScope === 'deck' ? 'ctx-scope active' : 'ctx-scope'} onClick={() => setContextScope('deck')}>整份 PPT</button>
+            </div>
+            {contextPreview.length > 0 && (
+              <div className="context-preview">
+                {contextPreview.map((item) => <span className="ctx-chip" key={item}>{item}</span>)}
+              </div>
+            )}
           </div>
 
           {files.length > 0 && (
@@ -372,6 +396,15 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
       )}
     </aside>
   );
+}
+
+function buildContextPreview(deck: Deck, slide: Slide | null, selected: Block[], scope: ChatContextScope): string[] {
+  if (scope === 'none') return [];
+  if (scope === 'deck') return [`整份 PPT · ${deck.slides.length} 页`, '较大，可能更慢'];
+  if (!slide) return [];
+  const slideIndex = deck.slides.findIndex((s) => s.id === slide.id) + 1;
+  if (scope === 'slide') return [`第 ${slideIndex} 页`, `${slide.blocks.length} 组件`];
+  return selected.map((b) => `${b.type}:${b.id.slice(0, 6)}`);
 }
 
 function HistoryList({
@@ -450,7 +483,8 @@ function MessageBubble({ msg }: { msg: ChatSessionMessage }) {
   const [showAttach, setShowAttach] = useState(false);
   const hasText = !!msg.text || msg.status === 'streaming';
   const hasTools = (msg.toolEvents?.length ?? 0) > 0;
-  const carriedCount = (msg.attachments?.length ?? 0) + (msg.contextRefs?.length ?? 0);
+  const hasContext = !!msg.contextSnapshot || !!msg.contextText?.trim() || (msg.contextRefs?.length ?? 0) > 0;
+  const carriedCount = (msg.attachments?.length ?? 0) + (hasContext ? 1 : 0);
 
   return (
     <div className={`bubble ${msg.role} ${msg.status ?? ''}`}>
@@ -464,6 +498,8 @@ function MessageBubble({ msg }: { msg: ChatSessionMessage }) {
       )}
       {carriedCount > 0 && (
         <CarriedFooter
+          contextSnapshot={msg.contextSnapshot}
+          contextText={msg.contextText}
           attachments={msg.attachments ?? []}
           refs={msg.contextRefs ?? []}
           expanded={showAttach}
@@ -506,33 +542,50 @@ function ToolTimeline({ events, streaming }: { events: import('../../ai/orchestr
 }
 
 function CarriedFooter({
-  attachments, refs, expanded, onToggle,
+  contextSnapshot, contextText, attachments, refs, expanded, onToggle,
 }: {
+  contextSnapshot?: ChatContextSnapshot;
+  contextText?: string;
   attachments: import('../../ai/orchestrator').ChatSessionAttachment[];
-  refs: { kind: 'slide' | 'block'; id: string; label: string }[];
+  refs: ChatContextRef[];
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const total = attachments.length + refs.length;
+  const hasContext = !!contextSnapshot || !!contextText?.trim() || refs.length > 0;
+  const total = attachments.length + (hasContext ? 1 : 0);
+  const contextLabel = contextSnapshot?.label ?? (refs.length > 0 ? `${refs.length} 引用` : '旧版上下文');
   return (
     <div className={`bubble-carry ${expanded ? 'open' : ''}`}>
       <button className="bubble-carry-summary" onClick={onToggle}>
         <span className="caret">{expanded ? '▾' : '▸'}</span>
         携带内容 · {attachments.length > 0 && <span>{attachments.length} 文件</span>}
-        {attachments.length > 0 && refs.length > 0 && <span>·</span>}
-        {refs.length > 0 && <span>{refs.length} 引用</span>}
+        {attachments.length > 0 && hasContext && <span>·</span>}
+        {hasContext && <span>{contextLabel}{contextSnapshot?.truncated ? ' · 已截断' : ''}</span>}
         {total === 0 && <span>无</span>}
       </button>
       {expanded && (
         <div className="bubble-carry-body">
-          {refs.length > 0 && (
+          {hasContext && (
             <div className="carry-section">
-              <div className="carry-label">上下文引用</div>
-              <div className="carry-chips">
-                {refs.map((r) => (
-                  <span key={r.kind + r.id} className="ctx-chip">@{r.label}</span>
-                ))}
+              <div className="carry-label">上下文</div>
+              <div className="carry-context-meta">
+                {contextSnapshot && <span>范围: {contextScopeLabel(contextSnapshot.scope)}</span>}
+                {contextSnapshot && <span>大小: {contextSnapshot.charCount} 字符</span>}
+                {contextSnapshot?.truncated && <span>已截断</span>}
               </div>
+              {refs.length > 0 && (
+                <div className="carry-chips">
+                  {refs.map((r) => (
+                    <span key={r.kind + r.id} className="ctx-chip">@{r.label}</span>
+                  ))}
+                </div>
+              )}
+              {(contextSnapshot?.text || contextText) && (
+                <pre className="carry-context-preview">
+                  {(contextSnapshot?.text ?? contextText ?? '').slice(0, 1000)}
+                  {(contextSnapshot?.text ?? contextText ?? '').length > 1000 ? '\n…(预览已截断)' : ''}
+                </pre>
+              )}
             </div>
           )}
           {attachments.length > 0 && (
@@ -549,6 +602,12 @@ function CarriedFooter({
       )}
     </div>
   );
+}
+
+function contextScopeLabel(scope: ChatContextSnapshot['scope']): string {
+  if (scope === 'deck') return '整份 PPT';
+  if (scope === 'slide') return '当前页';
+  return '选中组件';
 }
 
 function CarriedFile({ a }: { a: import('../../ai/orchestrator').ChatSessionAttachment }) {

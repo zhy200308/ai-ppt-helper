@@ -1,3 +1,4 @@
+import { getSidecar } from '../integrations/sidecar';
 import type { ProviderConfig, ProxyConfig } from './types';
 
 export interface AttachmentImage {
@@ -64,6 +65,7 @@ export interface TestConnectionResult {
 }
 
 const DEFAULT_TEST_PROMPT = 'ping';
+const DEV_PROXY_PATH = '/__ai-proxy';
 
 export class AIService {
   config: ProviderConfig;
@@ -124,75 +126,80 @@ export class AIService {
   private async *chatAnthropic(req: ChatRequest): AsyncGenerator<StreamEvent> {
     const url = joinUrl(this.config.baseUrl, '/v1/messages');
     const system = req.messages.find((m) => m.role === 'system')?.content;
-    const messages = req.messages
-      .filter((m) => m.role !== 'system')
-      .map((m) => {
-        if (m.role === 'tool') {
-          return {
-            role: 'user' as const,
-            content: [{ type: 'tool_result', tool_use_id: m.toolCallId, content: m.content }],
-          };
+    const messages: any[] = [];
+    for (const m of req.messages.filter((msg) => msg.role !== 'system')) {
+      if (m.role === 'tool') {
+        const last = messages[messages.length - 1];
+        const block = { type: 'tool_result', tool_use_id: m.toolCallId, content: m.content };
+        if (last?.role === 'user' && Array.isArray(last.content) && last.content.every((p: any) => p.type === 'tool_result')) {
+          last.content.push(block);
+        } else {
+          messages.push({ role: 'user' as const, content: [block] });
         }
-        if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length) {
-          return {
-            role: 'assistant' as const,
-            content: [
-              ...(m.content ? [{ type: 'text', text: m.content }] : []),
-              ...m.toolCalls.map((t) => ({
-                type: 'tool_use',
-                id: t.id,
-                name: t.name,
-                input: safeParseJson(t.arguments),
-              })),
-            ],
-          };
-        }
-        // Build user turns as content arrays so we can interleave images.
-        if (m.role === 'user' && m.attachments && m.attachments.length) {
-          const parts: any[] = [];
-          for (const a of m.attachments) {
-            if (a.kind === 'image') {
-              parts.push({
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: a.mediaType,
-                  data: stripDataUrlPrefix(a.dataUrl),
-                },
-              });
-            } else if (a.kind === 'document') {
-              parts.push({
-                type: 'document',
-                source: {
-                  type: 'base64',
-                  media_type: a.mediaType,
-                  data: stripDataUrlPrefix(a.dataUrl),
-                },
-              });
-            } else if (a.kind === 'text') {
-              parts.push({
-                type: 'text',
-                text: `[Attachment: ${a.name}]\n${a.text}`,
-              });
-            }
+        continue;
+      }
+      if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length) {
+        messages.push({
+          role: 'assistant' as const,
+          content: [
+            ...(m.content ? [{ type: 'text', text: m.content }] : []),
+            ...m.toolCalls.map((t) => ({
+              type: 'tool_use',
+              id: t.id,
+              name: t.name,
+              input: safeParseJson(t.arguments),
+            })),
+          ],
+        });
+        continue;
+      }
+      if (m.role === 'user' && m.attachments && m.attachments.length) {
+        const parts: any[] = [];
+        for (const a of m.attachments) {
+          if (a.kind === 'image') {
+            parts.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: a.mediaType,
+                data: stripDataUrlPrefix(a.dataUrl),
+              },
+            });
+          } else if (a.kind === 'document') {
+            parts.push({
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: a.mediaType,
+                data: stripDataUrlPrefix(a.dataUrl),
+              },
+            });
+          } else if (a.kind === 'text') {
+            parts.push({
+              type: 'text',
+              text: `[Attachment: ${a.name}]\n${a.text}`,
+            });
           }
-          if (m.content) parts.push({ type: 'text', text: m.content });
-          return { role: 'user' as const, content: parts };
         }
-        return { role: m.role as 'user' | 'assistant', content: m.content };
-      });
+        if (m.content) parts.push({ type: 'text', text: m.content });
+        messages.push({ role: 'user' as const, content: parts });
+        continue;
+      }
+      messages.push({ role: m.role as 'user' | 'assistant', content: m.content });
+    }
     const body: any = {
       model: this.config.model,
       max_tokens: req.maxTokens ?? this.config.maxTokens ?? 8192,
       messages,
       stream: req.stream !== false,
     };
+    if (this.config.model === 'claude-opus-4-7') body.context_1m = true;
     if (system) {
       // Tag the system prompt as cacheable so repeated turns hit the cache.
       body.system = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
     }
-    if (req.temperature !== undefined) body.temperature = req.temperature;
-    else if (this.config.temperature !== undefined) body.temperature = this.config.temperature;
+    if (req.temperature !== undefined && this.config.model !== 'claude-opus-4-7') body.temperature = req.temperature;
+    else if (this.config.temperature !== undefined && this.config.model !== 'claude-opus-4-7') body.temperature = this.config.temperature;
     if (req.tools?.length) {
       body.tools = req.tools.map((t, i) => ({
         name: t.name,
@@ -205,7 +212,9 @@ export class AIService {
     // Extended thinking: opt-in via config.maxTokens > 8k. We expose
     // streamed thinking_delta events via the existing parseAnthropicStream.
     if ((req.maxTokens ?? this.config.maxTokens ?? 0) >= 16000) {
-      body.thinking = { type: 'enabled', budget_tokens: 8000 };
+      body.thinking = this.config.model === 'claude-opus-4-7'
+        ? { type: 'adaptive' }
+        : { type: 'enabled', budget_tokens: 8000 };
     }
     const headers = this.buildHeaders('anthropic');
     const resp = await this.fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: req.signal });
@@ -229,12 +238,14 @@ export class AIService {
   // ============================================================
   private async *chatOpenAI(req: ChatRequest): AsyncGenerator<StreamEvent> {
     const url = joinUrl(this.config.baseUrl, '/chat/completions');
-    const messages = req.messages.map((m) => {
+    const messages: any[] = [];
+    for (const m of req.messages) {
       if (m.role === 'tool') {
-        return { role: 'tool', tool_call_id: m.toolCallId, content: m.content };
+        messages.push({ role: 'tool', tool_call_id: m.toolCallId, content: m.content });
+        continue;
       }
       if (m.role === 'assistant' && m.toolCalls?.length) {
-        return {
+        messages.push({
           role: 'assistant',
           content: m.content || null,
           tool_calls: m.toolCalls.map((t) => ({
@@ -242,7 +253,8 @@ export class AIService {
             type: 'function',
             function: { name: t.name, arguments: t.arguments },
           })),
-        };
+        });
+        continue;
       }
       if (m.role === 'user' && m.attachments && m.attachments.length) {
         const parts: any[] = [];
@@ -252,15 +264,15 @@ export class AIService {
           } else if (a.kind === 'text') {
             parts.push({ type: 'text', text: `[Attachment: ${a.name}]\n${a.text}` });
           } else {
-            // OpenAI doesn't take generic documents; embed name + note.
             parts.push({ type: 'text', text: `[Binary attachment: ${a.name} (${a.mediaType})]` });
           }
         }
         if (m.content) parts.push({ type: 'text', text: m.content });
-        return { role: 'user', content: parts };
+        messages.push({ role: 'user', content: parts });
+        continue;
       }
-      return { role: m.role, content: m.content };
-    });
+      messages.push({ role: m.role, content: m.content });
+    }
     const body: any = {
       model: this.config.model,
       messages,
@@ -313,6 +325,19 @@ export class AIService {
         systemInstruction = (systemInstruction ? systemInstruction + '\n' : '') + m.content;
         continue;
       }
+      if (m.role === 'tool') {
+        const last = contents[contents.length - 1];
+        const toolText = `[Tool: ${m.toolCallId}]\n${m.content.slice(0, 500)}`;
+        if (last?.role === 'user' && last.parts?.[0]?.text) {
+          last.parts[0].text += `\n\n${toolText}`;
+        } else {
+          contents.push({
+            role: 'user',
+            parts: [{ text: toolText }],
+          });
+        }
+        continue;
+      }
       const parts: any[] = [];
       for (const a of m.attachments ?? []) {
         if (a.kind === 'image' || a.kind === 'document') {
@@ -354,6 +379,7 @@ export class AIService {
       if (this.config.authStyle === 'bearer') h['authorization'] = `Bearer ${this.config.apiKey}`;
       else h['x-api-key'] = this.config.apiKey;
       h['anthropic-version'] = '2023-06-01';
+      if (this.config.model === 'claude-opus-4-7') h['x-enable-1m'] = 'true';
       // dangerous-direct-browser allows browser fetch to Anthropic.
       h['anthropic-dangerous-direct-browser-access'] = 'true';
     } else if (kind === 'openai') {
@@ -366,11 +392,15 @@ export class AIService {
 
   // The sidecar (when present) routes through the user proxy. Otherwise direct.
   private async fetch(url: string, init: RequestInit): Promise<Response> {
-    const sidecar = (globalThis as any).__SIDECAR__ as undefined | { fetch: typeof fetch };
+    const sidecar = getSidecar();
     if (sidecar?.fetch && this.proxy?.enabled) {
       return sidecar.fetch(url, init);
     }
-    return fetch(url, init);
+    const finalUrl = shouldUseDevProxy(url) ? DEV_PROXY_PATH : url;
+    const finalInit = shouldUseDevProxy(url)
+      ? { ...init, headers: { ...(init.headers as Record<string, string>), 'x-ai-proxy-target': url } }
+      : init;
+    return fetch(finalUrl, finalInit);
   }
 }
 
@@ -527,6 +557,15 @@ function joinUrl(base: string, path: string): string {
   return b + p;
 }
 
+function shouldUseDevProxy(url: string): boolean {
+  if (!import.meta.env.DEV) return false;
+  if (typeof window === 'undefined') return false;
+  const sidecar = getSidecar();
+  if (sidecar?.fetch) return false;
+  const target = new URL(url);
+  return target.origin !== window.location.origin;
+}
+
 function safeParseJson(s: string | undefined): unknown {
   if (!s) return {};
   try { return JSON.parse(s); } catch { return {}; }
@@ -554,7 +593,7 @@ function errorMessage(e: unknown): string {
 //  System proxy detection (sidecar-only; degrades gracefully)
 // ============================================================
 export async function detectSystemProxy(): Promise<{ httpProxy?: string; httpsProxy?: string } | null> {
-  const sidecar = (globalThis as any).__SIDECAR__ as undefined | { detectProxy?: () => Promise<any> };
+  const sidecar = getSidecar();
   if (sidecar?.detectProxy) return sidecar.detectProxy();
   return null;
 }
