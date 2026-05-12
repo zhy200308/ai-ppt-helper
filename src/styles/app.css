@@ -363,6 +363,24 @@
 }
 
 .input-with-icon { position: relative; }
+.json-config-editor {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: var(--bg-soft);
+}
+.json-config-editor textarea {
+  width: 100%;
+  min-height: 360px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text-default);
+}
 .input-with-icon input { padding-right: 36px; width: 100%; padding: 6px 32px 6px 8px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
 .input-with-icon .icon-btn {
   position: absolute;
@@ -633,6 +651,33 @@
   background: var(--bg-soft);
 }
 .bubble.error { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.choice-card {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  white-space: normal;
+}
+.choice-card.answered { opacity: 0.72; }
+.choice-title { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+.choice-detail { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
+.choice-options { display: flex; flex-direction: column; gap: 6px; }
+.choice-option {
+  text-align: left;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.choice-option:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.choice-option span { color: var(--text-muted); font-size: 11px; }
+.choice-custom { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.choice-custom textarea { resize: vertical; border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 6px; }
+.choice-response { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .bubble-refs, .bubble-attachments {
   display: flex;
   gap: 4px;

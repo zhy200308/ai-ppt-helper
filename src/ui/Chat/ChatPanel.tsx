@@ -116,14 +116,13 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
     if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
   }, []);
 
-  const sendMessage = useCallback(async () => {
-    if (!input.trim() && files.length === 0) return;
+  const sendUserText = useCallback(async (text: string, opts?: { choiceResponse?: { id: string; label: string; reply: string }; skipContext?: boolean }) => {
+    if (!text.trim() && files.length === 0 && !opts?.choiceResponse) return;
     if (busy) return;
 
-    const deckState = useDeckStore.getState().deck;
-    const snapshot = buildChatContextSnapshot({
+    const snapshot = opts?.skipContext ? null : buildChatContextSnapshot({
       scope: contextScope,
-      deck: deckState,
+      deck: useDeckStore.getState().deck,
       activeSlideId: slide?.id ?? null,
       selectedBlockIds: selected.map((b) => b.id),
     });
@@ -131,16 +130,17 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
     const userMsg: ChatSessionMessage = {
       id: `u_${Date.now()}`,
       role: 'user',
-      text: input,
-      attachments: files.map((f) => ({
+      text,
+      attachments: opts?.skipContext ? [] : files.map((f) => ({
         name: f.name,
         mime: f.mime,
         previewText: f.previewText,
         dataUrl: f.dataUrl,
       })),
       contextRefs: snapshot?.refs ?? [],
-      contextSnapshot: snapshot,
+      contextSnapshot: snapshot ?? undefined,
       contextText: snapshot?.text,
+      choiceResponse: opts?.choiceResponse,
       ts: Date.now(),
       status: 'done',
     };
@@ -185,12 +185,18 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
             ),
           }));
         },
+        onUserChoiceRequest: (id, question, detail, choices, allowCustom) => {
+          setMessages((cur) => updateAssistant(cur, assistant.id, {
+            status: 'waiting_choice',
+            choiceRequest: { id, question, detail, choices, allowCustom },
+          }));
+        },
         onError: (msg) => {
           setMessages((cur) => updateAssistant(cur, assistant.id, { text: msg, status: 'error', error: msg }));
         },
       });
       setMessages((cur) => cur.map((m) =>
-        m.id === assistant.id && m.status !== 'error' ? { ...m, status: 'done' } : m,
+        m.id === assistant.id && m.status !== 'error' && m.status !== 'waiting_choice' ? { ...m, status: 'done' } : m,
       ));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -199,7 +205,21 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
       setBusy(false);
       abortRef.current = null;
     }
-  }, [input, files, busy, messages, slide, selected, contextScope]);
+  }, [busy, contextScope, files, messages, selected, slide]);
+
+  const sendMessage = useCallback(async () => {
+    await sendUserText(input);
+  }, [input, sendUserText]);
+
+  const chooseOption = useCallback((assistantId: string, choice: { id: string; label: string; reply: string }) => {
+    setMessages((cur) => updateAssistant(cur, assistantId, {
+      choiceRequest: cur.find((m) => m.id === assistantId)?.choiceRequest
+        ? { ...cur.find((m) => m.id === assistantId)!.choiceRequest!, answered: true }
+        : undefined,
+    }));
+    void sendUserText(choice.reply, { choiceResponse: choice, skipContext: true });
+  }, [sendUserText]);
+
 
   const triggerSend = useCallback(() => {
     if (busy) return;
@@ -306,7 +326,7 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
           {showPreview && messages.length > 0 && <LivePreview />}
           <div className="chat-body" ref={scrollRef}>
             {messages.length === 0 && <Empty />}
-            {messages.map((m) => <MessageBubble key={m.id} msg={m} />)}
+            {messages.map((m) => <MessageBubble key={m.id} msg={m} onChoose={chooseOption} />)}
           </div>
 
           <div className="chat-context">
@@ -479,7 +499,7 @@ function updateAssistant(messages: ChatSessionMessage[], id: string, patch: Part
   return messages.map((m) => (m.id === id ? { ...m, ...patch } : m));
 }
 
-function MessageBubble({ msg }: { msg: ChatSessionMessage }) {
+function MessageBubble({ msg, onChoose }: { msg: ChatSessionMessage; onChoose: (assistantId: string, choice: { id: string; label: string; reply: string }) => void }) {
   const [showAttach, setShowAttach] = useState(false);
   const hasText = !!msg.text || msg.status === 'streaming';
   const hasTools = (msg.toolEvents?.length ?? 0) > 0;
@@ -493,6 +513,12 @@ function MessageBubble({ msg }: { msg: ChatSessionMessage }) {
           {msg.text || (msg.status === 'streaming' && !hasTools ? <span className="dot-dot-dot"/> : '')}
         </div>
       )}
+      {msg.choiceRequest && (
+        <ChoiceCard msg={msg} onChoose={onChoose} />
+      )}
+      {msg.choiceResponse && (
+        <div className="choice-response">已选择：{msg.choiceResponse.label}</div>
+      )}
       {hasTools && (
         <ToolTimeline events={msg.toolEvents!} streaming={msg.status === 'streaming'} />
       )}
@@ -505,6 +531,42 @@ function MessageBubble({ msg }: { msg: ChatSessionMessage }) {
           expanded={showAttach}
           onToggle={() => setShowAttach((v) => !v)}
         />
+      )}
+    </div>
+  );
+}
+
+function ChoiceCard({ msg, onChoose }: { msg: ChatSessionMessage; onChoose: (assistantId: string, choice: { id: string; label: string; reply: string }) => void }) {
+  const req = msg.choiceRequest!;
+  const [custom, setCustom] = useState('');
+  return (
+    <div className={`choice-card ${req.answered ? 'answered' : ''}`}>
+      <div className="choice-title">{req.question}</div>
+      {req.detail && <div className="choice-detail">{req.detail}</div>}
+      <div className="choice-options">
+        {req.choices.map((choice) => (
+          <button
+            key={choice.id}
+            className="choice-option"
+            disabled={req.answered}
+            onClick={() => onChoose(msg.id, { id: choice.id, label: choice.label, reply: choice.reply })}
+          >
+            <strong>{choice.label}</strong>
+            {choice.description && <span>{choice.description}</span>}
+          </button>
+        ))}
+      </div>
+      {req.allowCustom && !req.answered && (
+        <div className="choice-custom">
+          <textarea rows={2} value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="自定义回复内容…" />
+          <button
+            className="btn-sm btn-primary"
+            disabled={!custom.trim()}
+            onClick={() => onChoose(msg.id, { id: 'custom', label: '自定义', reply: custom.trim() })}
+          >
+            使用自定义回复
+          </button>
+        </div>
       )}
     </div>
   );

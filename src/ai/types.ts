@@ -1,5 +1,5 @@
-// AI provider types — modeled after the uploaded settings file but trimmed for
-// the web build. Extend with additional providers as protocols are added.
+// AI provider types — modeled after common Claude Code/relay settings while
+// keeping the web build protocol-aware.
 
 export type AIProvider =
   | 'anthropic'
@@ -34,6 +34,7 @@ export interface ProviderHealth {
   lastChecked: number;
   errorMessage?: string;
   model?: string;
+  endpoint?: string;
 }
 
 export interface ProxyConfig {
@@ -44,6 +45,14 @@ export interface ProxyConfig {
   username?: string;
   password?: string;
   pacUrl?: string;
+}
+
+export interface ClaudeCodeEnvConfig {
+  env: Record<string, unknown>;
+  name?: string;
+  provider?: string;
+  protocol?: AIProtocol;
+  authStyle?: AuthStyle;
 }
 
 export const OFFICIAL_PROVIDERS: AIProvider[] = [
@@ -77,10 +86,10 @@ export const RELAY_TEMPLATES: Record<
   'claude-relay': {
     label: 'Claude 中转站',
     baseUrl: 'https://lanyiapi.com',
-    model: 'claude-sonnet-4-5-20250929',
+    model: 'claude-sonnet-4-6',
     protocol: 'anthropic',
     authStyle: 'x-api-key',
-    description: '兼容 Anthropic 协议的中转站 (lanyiapi / AnyRouter / Claude Code 等)',
+    description: '兼容 Anthropic / Claude Code env JSON 的中转站 (lanyiapi / AnyRouter / GLM / Kimi 等)',
   },
   'openai-relay': {
     label: 'OpenAI 中转站',
@@ -98,7 +107,7 @@ export const DEFAULT_PROVIDERS: Record<string, ProviderConfig> = {
     label: 'Anthropic Claude',
     apiKey: '',
     baseUrl: 'https://api.anthropic.com',
-    model: 'claude-sonnet-4-5-20250929',
+    model: 'claude-sonnet-4-6',
     protocol: 'anthropic',
     authStyle: 'x-api-key',
     temperature: 0.7,
@@ -132,6 +141,28 @@ export const DEFAULT_PROVIDERS: Record<string, ProviderConfig> = {
     apiKey: '',
     baseUrl: 'https://api.deepseek.com/v1',
     model: 'deepseek-chat',
+    protocol: 'openai',
+    authStyle: 'bearer',
+    temperature: 0.7,
+    enabled: true,
+  },
+  qwen: {
+    provider: 'qwen',
+    label: '通义千问 Qwen',
+    apiKey: '',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen-plus',
+    protocol: 'openai',
+    authStyle: 'bearer',
+    temperature: 0.7,
+    enabled: true,
+  },
+  doubao: {
+    provider: 'doubao',
+    label: '豆包 Doubao',
+    apiKey: '',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    model: 'doubao-seed-1-6-250615',
     protocol: 'openai',
     authStyle: 'bearer',
     temperature: 0.7,

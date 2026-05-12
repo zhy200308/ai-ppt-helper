@@ -62,9 +62,11 @@ export interface TestConnectionResult {
   latencyMs: number;
   errorMessage?: string;
   model?: string;
+  endpoint?: string;
 }
 
-const DEFAULT_TEST_PROMPT = 'ping';
+const DEFAULT_TEST_PROMPT = 'Say OK';
+const TEST_TIMEOUT_MS = 20_000;
 const DEV_PROXY_PATH = '/__ai-proxy';
 
 export class AIService {
@@ -78,22 +80,30 @@ export class AIService {
   // -------- Connection test --------
   async testConnection(): Promise<TestConnectionResult> {
     const start = performance.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS);
     try {
       const res = await this.chatOnce({
         messages: [{ role: 'user', content: DEFAULT_TEST_PROMPT }],
-        maxTokens: 8,
+        maxTokens: 32,
+        signal: controller.signal,
       });
+      if (!res.text.trim()) throw new Error('测试响应为空，请检查模型或协议配置');
       return {
         ok: true,
         latencyMs: Math.round(performance.now() - start),
         model: res.model,
+        endpoint: this.testEndpoint(),
       };
     } catch (e) {
       return {
         ok: false,
         latencyMs: Math.round(performance.now() - start),
         errorMessage: errorMessage(e),
+        endpoint: this.testEndpoint(),
       };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -376,18 +386,28 @@ export class AIService {
   private buildHeaders(kind: 'anthropic' | 'openai' | 'gemini'): Record<string, string> {
     const h: Record<string, string> = { 'content-type': 'application/json' };
     if (kind === 'anthropic') {
-      if (this.config.authStyle === 'bearer') h['authorization'] = `Bearer ${this.config.apiKey}`;
+      if (this.config.authStyle === 'bearer') h.authorization = `Bearer ${this.config.apiKey}`;
       else h['x-api-key'] = this.config.apiKey;
       h['anthropic-version'] = '2023-06-01';
       if (this.config.model === 'claude-opus-4-7') h['x-enable-1m'] = 'true';
-      // dangerous-direct-browser allows browser fetch to Anthropic.
-      h['anthropic-dangerous-direct-browser-access'] = 'true';
+      if (!isRelayProviderKey(this.config.provider)) h['anthropic-dangerous-direct-browser-access'] = 'true';
     } else if (kind === 'openai') {
-      h['authorization'] = `Bearer ${this.config.apiKey}`;
+      h.authorization = `Bearer ${this.config.apiKey}`;
     } else if (kind === 'gemini') {
       // key in URL; nothing else.
     }
     return h;
+  }
+
+  private testEndpoint(): string {
+    switch (this.config.protocol) {
+      case 'anthropic':
+        return joinUrl(this.config.baseUrl, '/v1/messages');
+      case 'openai':
+        return joinUrl(this.config.baseUrl, '/chat/completions');
+      case 'gemini':
+        return joinUrl(this.config.baseUrl, `/models/${this.config.model}:generateContent`);
+    }
   }
 
   // The sidecar (when present) routes through the user proxy. Otherwise direct.
@@ -551,6 +571,10 @@ async function* parseGeminiStream(body: ReadableStream<Uint8Array>): AsyncGenera
 // ============================================================
 //  Helpers
 // ============================================================
+function isRelayProviderKey(provider: string): boolean {
+  return provider === 'claude-relay' || provider === 'openai-relay';
+}
+
 function joinUrl(base: string, path: string): string {
   const b = base.replace(/\/+$/, '');
   const p = path.startsWith('/') ? path : `/${path}`;

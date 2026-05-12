@@ -41,6 +41,7 @@ export interface SettingsActions {
   removeProvider: (k: string) => void;
   setProviderHealth: (k: string, h: ProviderHealth) => void;
   setProxyConfig: (c: ProxyConfig) => void;
+  replaceAIConfig: (config: { activeProvider: string; providers: Record<string, ProviderConfig>; proxyConfig: ProxyConfig }) => void;
 
   addTheme: (theme: ImportedTheme) => void;
   removeTheme: (id: string) => void;
@@ -75,6 +76,12 @@ export const useSettingsStore = create<SettingsStore>()(
       setProviderHealth: (k, h) =>
         set((s) => ({ providerHealth: { ...s.providerHealth, [k]: h } })),
       setProxyConfig: (c) => set({ proxyConfig: c }),
+      replaceAIConfig: (config) => set({
+        activeProvider: config.activeProvider,
+        providers: config.providers,
+        proxyConfig: config.proxyConfig,
+        providerHealth: {},
+      }),
 
       addTheme: (theme) =>
         set((s) => ({ customThemes: { ...s.customThemes, [theme.id]: theme } })),

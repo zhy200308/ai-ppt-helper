@@ -139,6 +139,29 @@ function slugify(s: string): string {
 }
 
 // Built-in skills shipped with the app — light, focused presets.
+const PPT_OPTIMIZATION_SKILLS: Array<{ name: string; title: string; description: string; systemPrompt: string }> = [
+  ['executive-summary', '高管摘要', '把内容压缩成管理层可快速决策的摘要', 'Prioritize strategic implications, decisions, risks, and next actions. Keep slides concise and executive-ready.'],
+  ['storyline', '叙事主线优化', '重组整份 PPT 的故事线和章节推进', 'Improve the deck narrative arc: context → tension → insight → recommendation → action. Use add_slide/edit tools only where needed.'],
+  ['slide-title-polish', '结论式标题', '把页面标题改为带观点的 assertion headline', 'Rewrite slide titles as concise assertion headlines that state the takeaway, not the topic. Use rewrite_text on title blocks.'],
+  ['one-message-per-slide', '一页一重点', '拆解信息过载页面，让每页只表达一个重点', 'Ensure each slide communicates one primary message. If a slide is overloaded, ask before splitting or deleting content.'],
+  ['consulting-style', '咨询风格结构化', '按 MECE 和咨询汇报方式优化结构', 'Use MECE grouping, parallel wording, clear action titles, and clean evidence hierarchy.'],
+  ['investor-pitch', '融资路演优化', '优化为投资人路演叙事', 'Shape content around problem, market, solution, traction, business model, moat, team, and ask. Keep claims investor-grade.'],
+  ['sales-deck', '销售材料优化', '优化为客户销售型材料', 'Focus on buyer pain, differentiated value, proof, objection handling, and next step. Reduce internal jargon.'],
+  ['training-deck', '培训课件优化', '优化为教学和培训课件', 'Sequence concepts from simple to advanced. Add examples, checkpoints, and speaker notes when useful.'],
+  ['data-story', '数据故事化', '把数据转换成清晰图表叙事', 'Turn data into insight-led slides. Use create_data_table before charts/tables and make the takeaway explicit.'],
+  ['chart-cleanup', '图表清理', '清理图表表达、标签和重点', 'Simplify charts: clear title, minimal series, meaningful labels, and one highlighted insight. Use data-table workflow.'],
+  ['visual-hierarchy', '视觉层级优化', '优化字号、间距、强调和阅读顺序', 'Improve visual hierarchy with scale, whitespace, contrast, and alignment. Prefer move_resize_block/style_block.'],
+  ['layout-balance', '版式平衡', '调整页面组件布局和平衡', 'Balance slide composition. Align edges, avoid crowding, preserve margins, and use move_resize_block/reorder_block.'],
+  ['theme-harmonize', '主题统一', '统一整份 PPT 的颜色和字体', 'Harmonize colors and typography across the deck. Use ask_user_choice before applying a new theme.'],
+  ['iconography', '图标系统优化', '为页面增加克制一致的图标表达', 'Use restrained, consistent icons only when they clarify meaning. Avoid decoration overload.'],
+  ['image-brief', '无文字图片提示词', '为 PPT 生成无文字可编辑友好的图片提示词', 'Create image prompts that explicitly forbid text, letters, numbers, logos, labels, signage, captions, and watermarks.'],
+  ['speaker-notes', '演讲者备注', '生成简洁演讲者备注', 'Add concise speaker notes that explain key talking points without duplicating slide text.'],
+  ['agenda-outline', '议程结构', '生成更清晰的章节和议程结构', 'Create or improve agenda/section flow with clear progression and 3-6 meaningful sections.'],
+  ['localize-cn-en', '中英双语润色', '进行中文/英文双语本地化和表达润色', 'Localize between Chinese and English while preserving numbers, names, units, and business meaning. Use rewrite_text.'],
+  ['reduce-text', '减少文字', '压缩页面文字量，提高可读性', 'Aggressively reduce text while preserving meaning. Prefer concise bullets <= 14 words and remove redundancy.'],
+  ['final-review', '最终质量检查', '检查整份 PPT 的结构、视觉和可导出性', 'Review the deck for storyline, consistency, overflow, contrast, image text risk, data-table usage, and export risks. Propose fixes before broad mutations.'],
+].map(([name, title, description, systemPrompt]) => ({ name, title, description, systemPrompt }));
+
 export const BUILTIN_SKILLS: SkillPackage[] = [
   {
     meta: {
@@ -177,6 +200,18 @@ Use \`add_slide\` (layout=bullet) or \`edit_block\` to write them onto the deck.
     files: {},
     systemPrompt: `Rewrite the referenced text in the requested tone (default: senior product designer pitching to executives). Use \`rewrite_text\`.`,
   },
+  ...PPT_OPTIMIZATION_SKILLS.map((s) => ({
+    meta: {
+      name: s.name,
+      title: s.title,
+      description: s.description,
+      source: 'builtin' as const,
+      updatedAt: 0,
+    },
+    enabled: true,
+    files: {},
+    systemPrompt: `${s.systemPrompt}\nPrefer typed PPT tools (rewrite_text, move_resize_block, style_block, reorder_block, delete_blocks) over broad edit_block. Use ask_user_choice before destructive or broad visual changes. Keep generated images text-free.`,
+  })),
 ];
 
 // Parse a chat message; if it starts with "/<skill> ..." return the

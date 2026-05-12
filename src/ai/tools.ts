@@ -337,11 +337,11 @@ export const TOOL_DERIVE_THEME: ToolSpec = {
 
 export const TOOL_GENERATE_IMAGE: ToolSpec = {
   name: 'generate_image',
-  description: 'Generate an illustrative image and place it on the deck. Returns a data URL. Use sparingly for cover slides or featured visuals.',
+  description: 'Generate a text-free illustrative image and place it on the deck. The image must not contain words, letters, numbers, logos, labels, captions, signage, watermarks, or UI text; all editable copy belongs in PPT text blocks. Use sparingly for cover slides or featured visuals.',
   parameters: {
     type: 'object',
     properties: {
-      prompt: { type: 'string' },
+      prompt: { type: 'string', description: 'Describe only the visual scene/style. Do not ask the image model to render any text.' },
       slide_id: { type: 'string' },
       x: { type: 'number' },
       y: { type: 'number' },
@@ -362,6 +362,115 @@ export const TOOL_GENERATE_IMAGE: ToolSpec = {
   },
 };
 
+export const TOOL_DELETE_BLOCKS: ToolSpec = {
+  name: 'delete_blocks',
+  description: 'Delete one or more blocks from a slide. Use only when the target blocks are explicit in PPT context or after asking the user to choose.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      block_ids: { type: 'array', items: { type: 'string' } },
+      reason: { type: 'string' },
+    },
+    required: ['slide_id', 'block_ids'],
+  },
+};
+
+export const TOOL_DELETE_SLIDE: ToolSpec = {
+  name: 'delete_slide',
+  description: 'Delete a slide. For destructive changes, ask_user_choice should be used first unless the user explicitly requested this exact deletion.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      reason: { type: 'string' },
+    },
+    required: ['slide_id'],
+  },
+};
+
+export const TOOL_MOVE_RESIZE_BLOCK: ToolSpec = {
+  name: 'move_resize_block',
+  description: 'Move or resize a specific block with typed geometry fields. Prefer this over edit_block for layout operations.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      block_id: { type: 'string' },
+      x: { type: 'number' },
+      y: { type: 'number' },
+      w: { type: 'number' },
+      h: { type: 'number' },
+      rotation: { type: 'number' },
+    },
+    required: ['slide_id', 'block_id'],
+  },
+};
+
+export const TOOL_REORDER_BLOCK: ToolSpec = {
+  name: 'reorder_block',
+  description: 'Change a block layer order on a slide.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      block_id: { type: 'string' },
+      direction: { type: 'string', enum: ['up', 'down', 'top', 'bottom'] },
+    },
+    required: ['slide_id', 'block_id', 'direction'],
+  },
+};
+
+export const TOOL_STYLE_BLOCK: ToolSpec = {
+  name: 'style_block',
+  description: 'Apply common style fields to a block. Prefer this over edit_block for color, typography, fill, stroke, opacity, and radius changes.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      block_id: { type: 'string' },
+      color: { type: 'string' },
+      fill: { type: 'string' },
+      stroke: { type: 'string' },
+      strokeWidth: { type: 'number' },
+      strokeDash: { type: 'string', enum: ['solid', 'dashed', 'dotted'] },
+      fontSize: { type: 'number' },
+      fontFamily: { type: 'string' },
+      background: { type: 'string' },
+      opacity: { type: 'number' },
+      cornerRadius: { type: 'number' },
+    },
+    required: ['slide_id', 'block_id'],
+  },
+};
+
+export const TOOL_ASK_USER_CHOICE: ToolSpec = {
+  name: 'ask_user_choice',
+  description: 'Ask the user to choose from structured options before continuing. Use for theme/color decisions, ambiguous component targets, destructive operations, or export strategy choices. Each option carries custom reply text that will be sent back to the AI.',
+  parameters: {
+    type: 'object',
+    properties: {
+      question: { type: 'string' },
+      detail: { type: 'string' },
+      choices: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            label: { type: 'string' },
+            description: { type: 'string' },
+            reply: { type: 'string', description: 'The exact message to send back when this option is selected.' },
+          },
+          required: ['id', 'label', 'reply'],
+        },
+      },
+      allow_custom: { type: 'boolean' },
+    },
+    required: ['question', 'choices'],
+  },
+};
+
 export const ALL_TOOLS: ToolSpec[] = [
   TOOL_OUTLINE_DECK,
   TOOL_POPULATE_SLIDE,
@@ -369,6 +478,12 @@ export const ALL_TOOLS: ToolSpec[] = [
   TOOL_ADD_SLIDE,
   TOOL_EDIT_BLOCK,
   TOOL_REWRITE_TEXT,
+  TOOL_DELETE_BLOCKS,
+  TOOL_DELETE_SLIDE,
+  TOOL_MOVE_RESIZE_BLOCK,
+  TOOL_REORDER_BLOCK,
+  TOOL_STYLE_BLOCK,
+  TOOL_ASK_USER_CHOICE,
   TOOL_SET_THEME,
   TOOL_DERIVE_THEME,
   TOOL_GENERATE_IMAGE,

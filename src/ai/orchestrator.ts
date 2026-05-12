@@ -70,6 +70,21 @@ Whenever the user asks for a chart, pie, bar, line, or numeric table:
   3. The data table is the single source of truth; multiple charts/tables
      can reference the same id. Reuse ids when updating.
 
+# Image generation — NO TEXT in images (HARD RULE)
+AI-generated images must be purely visual. The image must NOT contain text, letters, numbers, logos, labels, captions, signage, watermarks, UI typography, or any readable typography. Put all presentation wording in editable PPT text blocks, not inside images. For generated SVG visuals, use only geometry/paths/shapes and never include <text> or <tspan> nodes.
+
+# Component operation priority
+Prefer typed tools over \`edit_block\` for well-defined operations:
+- Move or resize: \`move_resize_block\` with x/y/w/h/rotation
+- Layer order: \`reorder_block\` with direction up/down/top/bottom
+- Style fields: \`style_block\` for color/fill/stroke/fontSize/opacity/cornerRadius
+- Delete: \`delete_blocks\` or \`delete_slide\`
+- Ambiguous targets: use \`ask_user_choice\` before mutating
+- \`edit_block\` is only for free-form patches not covered by typed tools
+
+# When to ask before acting (use ask_user_choice)
+Call \`ask_user_choice\` before applying theme/colors, redesigning multiple slides, deleting 2+ blocks, deleting a slide, replacing existing content, or choosing an export fallback strategy unless the user explicitly confirmed the exact action. Each option's \`reply\` field must contain the exact message to send back when selected.
+
 # Style discipline
 - <= 6 bullets per body slide, each <= 14 words
 - Use parallel structure across bullets (start with same part of speech)
@@ -118,12 +133,23 @@ export interface ChatSessionMessage {
   contextRefs?: ChatContextRef[];
   contextText?: string;
   contextSnapshot?: ChatContextSnapshot;
+  choiceRequest?: UserChoiceRequest;
+  choiceResponse?: { id: string; label: string; reply: string };
   // Tool calls executed while this assistant message was being streamed.
   // Rendered as a collapsible "活动" timeline below the text.
   toolEvents?: ToolEvent[];
   ts: number;
-  status?: 'pending' | 'streaming' | 'done' | 'error';
+  status?: 'pending' | 'streaming' | 'done' | 'error' | 'waiting_choice';
   error?: string;
+}
+
+export interface UserChoiceRequest {
+  id: string;
+  question: string;
+  detail?: string;
+  choices: { id: string; label: string; description?: string; reply: string }[];
+  allowCustom?: boolean;
+  answered?: boolean;
 }
 
 export interface ChatRunResult {
@@ -199,6 +225,18 @@ async function applyTool(name: string, input: any): Promise<string> {
       return doEditBlock(input);
     case 'rewrite_text':
       return doRewriteText(input);
+    case 'delete_blocks':
+      return doDeleteBlocks(input);
+    case 'delete_slide':
+      return doDeleteSlide(input);
+    case 'move_resize_block':
+      return doMoveResizeBlock(input);
+    case 'reorder_block':
+      return doReorderBlock(input);
+    case 'style_block':
+      return doStyleBlock(input);
+    case 'ask_user_choice':
+      return doAskUserChoice(input);
     case 'set_theme':
       return doSetTheme(input);
     case 'derive_theme':
@@ -217,6 +255,7 @@ async function applyTool(name: string, input: any): Promise<string> {
       return `Unknown tool: ${name}`;
   }
 }
+
 
 function doCreateDataTable(input: any): string {
   const id = input.id || `dt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -416,6 +455,9 @@ function sanitizeSvg(svg: unknown): string {
   if (!trimmed.startsWith('<svg') || !trimmed.includes('</svg>')) return '';
   return trimmed
     .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<text[\s\S]*?<\/text>/gi, '')
+    .replace(/<tspan[\s\S]*?<\/tspan>/gi, '')
+    .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '')
     .replace(/\son\w+="[^"]*"/gi, '')
     .replace(/\son\w+='[^']*'/gi, '')
     .replace(/javascript:/gi, '');
@@ -493,6 +535,83 @@ function doRewriteText(input: any): string {
   return 'rewritten';
 }
 
+function doDeleteBlocks(input: any): string {
+  const { slide_id, block_ids } = input;
+  if (!slide_id || !Array.isArray(block_ids) || !block_ids.length) return 'missing slide_id or block_ids';
+  const store = useDeckStore.getState();
+  const slide = store.deck.slides.find((s) => s.id === slide_id);
+  if (!slide) return `slide ${slide_id} not found`;
+  const existing = block_ids.filter((id: string) => slide.blocks.some((b) => b.id === id));
+  if (!existing.length) return 'no matching blocks found on this slide';
+  store.removeBlocks(slide_id, existing);
+  return `deleted ${existing.length} block(s) from ${slide_id}`;
+}
+
+function doDeleteSlide(input: any): string {
+  const { slide_id } = input;
+  if (!slide_id) return 'missing slide_id';
+  const store = useDeckStore.getState();
+  if (store.deck.slides.length <= 1) return 'cannot delete the last slide';
+  const exists = store.deck.slides.some((s) => s.id === slide_id);
+  if (!exists) return `slide ${slide_id} not found`;
+  store.removeSlide(slide_id);
+  return `slide ${slide_id} deleted`;
+}
+
+function doMoveResizeBlock(input: any): string {
+  const { slide_id, block_id, x, y, w, h, rotation } = input;
+  if (!slide_id || !block_id) return 'missing slide_id or block_id';
+  const store = useDeckStore.getState();
+  const slide = store.deck.slides.find((s) => s.id === slide_id);
+  if (!slide) return `slide ${slide_id} not found`;
+  const block = slide.blocks.find((b) => b.id === block_id);
+  if (!block) return `block ${block_id} not found on ${slide_id}`;
+  const patch: Partial<Block> = {};
+  if (typeof x === 'number') patch.x = x;
+  if (typeof y === 'number') patch.y = y;
+  if (typeof w === 'number') patch.w = w;
+  if (typeof h === 'number') patch.h = h;
+  if (typeof rotation === 'number') patch.rotation = rotation;
+  store.updateBlock(slide_id, block_id, patch);
+  return 'block moved/resized';
+}
+
+function doReorderBlock(input: any): string {
+  const { slide_id, block_id, direction } = input;
+  if (!slide_id || !block_id || !direction) return 'missing required fields';
+  const store = useDeckStore.getState();
+  const slide = store.deck.slides.find((s) => s.id === slide_id);
+  if (!slide) return `slide ${slide_id} not found`;
+  const exists = slide.blocks.some((b) => b.id === block_id);
+  if (!exists) return `block ${block_id} not found on ${slide_id}`;
+  if (!['up', 'down', 'top', 'bottom'].includes(direction)) return 'direction must be up, down, top, or bottom';
+  store.reorderBlock(slide_id, block_id, direction);
+  return `block ${block_id} moved ${direction}`;
+}
+
+function doStyleBlock(input: any): string {
+  const { slide_id, block_id } = input;
+  if (!slide_id || !block_id) return 'missing slide_id or block_id';
+  const store = useDeckStore.getState();
+  const slide = store.deck.slides.find((s) => s.id === slide_id);
+  if (!slide) return `slide ${slide_id} not found`;
+  const block = slide.blocks.find((b) => b.id === block_id);
+  if (!block) return `block ${block_id} not found on ${slide_id}`;
+  const { slide_id: _s, block_id: _b, ...stylePatch } = input;
+  if (!Object.keys(stylePatch).length) return 'no style fields provided';
+  store.updateBlock(slide_id, block_id, stylePatch as Partial<Block>);
+  return 'style applied';
+}
+
+function doAskUserChoice(input: any): string {
+  // This tool pauses the run loop — the caller (runChat) handles the UI interrupt.
+  // We throw a sentinel that the runChat caller catches to render the choice UI.
+  const err = new Error('ask_user_choice requires UI interaction') as any;
+  err._askUserChoice = input;
+  throw err;
+}
+
+
 function doSetTheme(input: any): string {
   const store = useDeckStore.getState();
   const settings = useSettingsStore.getState();
@@ -558,6 +677,8 @@ export async function runChat(opts: {
   onToolResult: (id: string, name: string, result: string) => void;
   onError: (msg: string) => void;
   onUsage?: (u: { inputTokens?: number; outputTokens?: number }) => void;
+  /** Called when AI emits ask_user_choice — UI renders the selectable dialog. */
+  onUserChoiceRequest?: (id: string, question: string, detail: string | undefined, choices: { id: string; label: string; description: string | undefined; reply: string }[], allowCustom: boolean) => void;
 }): Promise<void> {
   const { activeProvider, providers, proxyConfig } = useSettingsStore.getState();
   const cfg = providers[activeProvider];
@@ -614,6 +735,19 @@ export async function runChat(opts: {
     if (pendingToolCalls.length === 0) return;
 
     // Append assistant turn (with tool_calls) and tool results to history, then loop.
+    const toolResults: ChatMessage[] = [];
+    for (const t of pendingToolCalls) {
+      opts.onToolCall(t.id, t.name, t.input);
+      if (t.name === 'ask_user_choice') {
+        const choices = normalizeChoiceOptions(t.input?.choices);
+        opts.onUserChoiceRequest?.(t.id, String(t.input?.question ?? '请选择下一步'), typeof t.input?.detail === 'string' ? t.input.detail : undefined, choices, !!t.input?.allow_custom);
+        opts.onToolResult(t.id, t.name, 'waiting for user choice');
+        return;
+      }
+      const r = await applyTool(t.name, t.input);
+      opts.onToolResult(t.id, t.name, r);
+      toolResults.push({ role: 'tool' as const, content: r.slice(0, MAX_TOOL_RESULT_CHARS), toolCallId: t.id });
+    }
     messages = [
       ...messages,
       {
@@ -625,12 +759,19 @@ export async function runChat(opts: {
           arguments: JSON.stringify(t.input ?? {}),
         })),
       },
-      ...await Promise.all(pendingToolCalls.map(async (t) => {
-        opts.onToolCall(t.id, t.name, t.input);
-        const r = await applyTool(t.name, t.input);
-        opts.onToolResult(t.id, t.name, r);
-        return { role: 'tool' as const, content: r.slice(0, MAX_TOOL_RESULT_CHARS), toolCallId: t.id };
-      })),
+      ...toolResults,
     ];
   }
+}
+
+function normalizeChoiceOptions(raw: unknown): { id: string; label: string; description: string | undefined; reply: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((c, idx) => ({
+      id: String((c as any)?.id ?? `choice_${idx + 1}`),
+      label: String((c as any)?.label ?? `选项 ${idx + 1}`),
+      description: typeof (c as any)?.description === 'string' ? (c as any).description : undefined,
+      reply: String((c as any)?.reply ?? (c as any)?.label ?? ''),
+    }))
+    .filter((c) => c.reply.trim());
 }

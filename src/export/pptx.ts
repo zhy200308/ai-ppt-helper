@@ -5,6 +5,7 @@ import PptxGenJS from 'pptxgenjs';
 import type {
   Block, Deck, ShapeBlock, TextBlock, ImageBlock, ChartBlock, TableBlock,
   ListBlock, DividerBlock, VideoBlock, EmbedBlock, ConnectorBlock,
+  ProgressBlock, KpiCardBlock, GalleryBlock, MathBlock, AudioBlock, BadgeBlock, InkBlock,
 } from '../core/schema/types';
 import { resolveEndpoint } from '../canvas/connectorAnchor';
 
@@ -29,7 +30,7 @@ export async function exportPptx(deck: Deck): Promise<void> {
     const sorted = [...slide.blocks].sort((a, b) => a.z - b.z);
     for (const block of sorted) {
       if (block.hidden) continue;
-      addBlockToSlide(s, block, sx, sy, slide);
+      addBlockToSlide(s, block, sx, sy, deck, slide);
     }
   }
 
@@ -37,7 +38,7 @@ export async function exportPptx(deck: Deck): Promise<void> {
   await pptx.writeFile({ fileName: filename });
 }
 
-function addBlockToSlide(slide: any, block: Block, sx: number, sy: number, parentSlide?: import('../core/schema/types').Slide) {
+function addBlockToSlide(slide: any, block: Block, sx: number, sy: number, deck: Deck, parentSlide?: import('../core/schema/types').Slide) {
   const x = block.x * sx;
   const y = block.y * sy;
   const w = block.w * sx;
@@ -54,10 +55,10 @@ function addBlockToSlide(slide: any, block: Block, sx: number, sy: number, paren
       addImageBlock(slide, block, { x, y, w, h });
       break;
     case 'chart':
-      addChartBlock(slide, block, { x, y, w, h });
+      addChartBlock(slide, block, { x, y, w, h }, deck);
       break;
     case 'table':
-      addTableBlock(slide, block, { x, y, w, h });
+      addTableBlock(slide, block, { x, y, w, h }, deck);
       break;
     case 'code':
       slide.addText(block.code, {
@@ -86,6 +87,27 @@ function addBlockToSlide(slide: any, block: Block, sx: number, sy: number, paren
       break;
     case 'connector':
       if (parentSlide) addConnectorBlock(slide, block, sx, sy, parentSlide);
+      break;
+    case 'progress':
+      addProgressBlock(slide, block, { x, y, w, h });
+      break;
+    case 'kpi':
+      addKpiBlock(slide, block, { x, y, w, h });
+      break;
+    case 'gallery':
+      addGalleryBlock(slide, block, { x, y, w, h });
+      break;
+    case 'math':
+      addMathBlock(slide, block, { x, y, w, h });
+      break;
+    case 'audio':
+      addAudioBlock(slide, block, { x, y, w, h });
+      break;
+    case 'badge':
+      addBadgeBlock(slide, block, { x, y, w, h });
+      break;
+    case 'ink':
+      addInkBlock(slide, block, sx, sy);
       break;
   }
 }
@@ -134,12 +156,12 @@ function addEmbedBlock(slide: any, block: EmbedBlock, geo: any) {
   // PPTX has no live iframes / mermaid; render a placeholder card with the
   // source url so the user can recognize it after import.
   const label = block.kind === 'iframe'
-    ? `🌐 ${block.src}`
+    ? `Web: ${block.src}`
     : block.kind === 'mermaid'
-      ? '📊 Mermaid 图表'
+      ? 'Mermaid diagram'
       : block.kind === 'math'
-        ? '∑ 公式'
-        : 'HTML';
+        ? 'Formula'
+        : 'HTML embed';
   slide.addText([
     { text: label, options: { bold: true, fontSize: 16, color: '4F46E5' } },
     { text: '\n' + (block.fallback ?? ''), options: { fontSize: 12, color: '64748B' } },
@@ -240,10 +262,11 @@ function addImageBlock(slide: any, block: ImageBlock, geo: any) {
   }
 }
 
-function addChartBlock(slide: any, block: ChartBlock, geo: any) {
-  const data = block.series.map((s) => ({
+function addChartBlock(slide: any, block: ChartBlock, geo: any, deck: Deck) {
+  const resolved = resolveChart(block, deck);
+  const data = resolved.series.map((s) => ({
     name: s.name,
-    labels: block.categories ?? s.data.map((_, i) => `${i + 1}`),
+    labels: resolved.categories ?? s.data.map((_, i) => `${i + 1}`),
     values: s.data,
   }));
   const chartType =
@@ -252,18 +275,118 @@ function addChartBlock(slide: any, block: ChartBlock, geo: any) {
     block.chart === 'pie' ? 'pie' :
     block.chart === 'area' ? 'area' :
     'scatter';
+  if (!data.length) {
+    slide.addText('Chart data unavailable', { ...geo, color: '64748B', align: 'center', valign: 'middle', fill: { color: 'F8FAFC' }, line: { color: 'CBD5E1' } });
+    return;
+  }
   slide.addChart(chartType, data, { ...geo });
 }
 
-function addTableBlock(slide: any, block: TableBlock, geo: any) {
-  const rows = block.cells.map((row, ri) => row.map((cell) => ({
+function addTableBlock(slide: any, block: TableBlock, geo: any, deck: Deck) {
+  const cells = resolveTable(block, deck);
+  const rows = cells.map((row, ri) => row.map((cell) => ({
     text: cell,
     options: {
       bold: (block.headerRow && ri === 0),
       fill: { color: (block.headerRow && ri === 0) ? 'F1F5F9' : 'FFFFFF' },
     },
   })));
+  if (!rows.length) {
+    slide.addText('Table data unavailable', { ...geo, color: '64748B', align: 'center', valign: 'middle', fill: { color: 'F8FAFC' }, line: { color: 'CBD5E1' } });
+    return;
+  }
   slide.addTable(rows, { ...geo, fontSize: 12, border: { type: 'solid', color: 'CBD5E1', pt: 0.5 } });
+}
+
+function resolveChart(block: ChartBlock, deck: Deck): { series: { name: string; data: number[] }[]; categories?: string[] } {
+  if (!block.dataRef) return { series: block.series, categories: block.categories };
+  const table = deck.dataTables?.[block.dataRef.tableId];
+  if (!table) return { series: block.series, categories: block.categories };
+  const yKeys = block.dataRef.yColumns?.length
+    ? block.dataRef.yColumns
+    : table.columns.filter((c) => c.type === 'number' && c.key !== block.dataRef!.xColumn).map((c) => c.key);
+  return {
+    categories: table.rows.map((r) => String(r[block.dataRef!.xColumn] ?? '')),
+    series: yKeys.map((key) => ({
+      name: table.columns.find((c) => c.key === key)?.label ?? key,
+      data: table.rows.map((r) => Number(r[key] ?? 0)),
+    })),
+  };
+}
+
+function resolveTable(block: TableBlock, deck: Deck): string[][] {
+  if (!block.dataRef) return block.cells;
+  const table = deck.dataTables?.[block.dataRef.tableId];
+  if (!table) return block.cells;
+  const cols = block.dataRef.columns?.length ? block.dataRef.columns : table.columns.map((c) => c.key);
+  return [
+    cols.map((key) => table.columns.find((c) => c.key === key)?.label ?? key),
+    ...table.rows.map((row) => cols.map((key) => String(row[key] ?? ''))),
+  ];
+}
+
+function addProgressBlock(slide: any, block: ProgressBlock, geo: any) {
+  const value = Math.max(0, Math.min(1, block.value || 0));
+  const barH = Math.min(geo.h, Math.max(0.08, (block.thickness ?? 18) / 144));
+  const barY = geo.y + (geo.h - barH) / 2;
+  slide.addShape('roundRect', { x: geo.x, y: barY, w: geo.w, h: barH, fill: { color: stripHash(block.trackColor ?? '#E2E8F0') }, line: { color: stripHash(block.trackColor ?? '#E2E8F0') } });
+  slide.addShape('roundRect', { x: geo.x, y: barY, w: geo.w * value, h: barH, fill: { color: stripHash(block.color ?? '#4F46E5') }, line: { color: stripHash(block.color ?? '#4F46E5') } });
+  if (block.label || block.showValue) {
+    slide.addText(`${block.label ?? ''}${block.showValue ? ` ${Math.round(value * 100)}%` : ''}`.trim(), { ...geo, y: geo.y, h: Math.max(0.25, geo.h / 3), fontSize: 12, color: stripHash(block.color ?? '#0F172A') });
+  }
+}
+
+function addKpiBlock(slide: any, block: KpiCardBlock, geo: any) {
+  slide.addShape('roundRect', { ...geo, fill: { color: 'F8FAFC' }, line: { color: 'CBD5E1', width: 1 } });
+  slide.addText(block.value, { x: geo.x + 0.12, y: geo.y + 0.12, w: geo.w - 0.24, h: geo.h * 0.38, bold: true, fontSize: 26, color: stripHash(block.color ?? '#0F172A'), margin: 0 });
+  slide.addText(block.label, { x: geo.x + 0.12, y: geo.y + geo.h * 0.5, w: geo.w - 0.24, h: geo.h * 0.22, fontSize: 12, color: '64748B', margin: 0 });
+  if (block.delta || block.sub) slide.addText([block.delta, block.sub].filter(Boolean).join('  '), { x: geo.x + 0.12, y: geo.y + geo.h * 0.74, w: geo.w - 0.24, h: geo.h * 0.2, fontSize: 10, color: block.deltaTone === 'down' ? 'DC2626' : block.deltaTone === 'up' ? '16A34A' : '64748B', margin: 0 });
+}
+
+function addGalleryBlock(slide: any, block: GalleryBlock, geo: any) {
+  const cols = Math.max(1, Math.min(6, block.columns ?? Math.ceil(Math.sqrt(block.images.length || 1))));
+  const gap = (block.gap ?? 12) / 144;
+  const rows = Math.ceil((block.images.length || 1) / cols);
+  const cellW = (geo.w - gap * (cols - 1)) / cols;
+  const cellH = (geo.h - gap * (rows - 1)) / rows;
+  block.images.forEach((img, i) => {
+    const x = geo.x + (i % cols) * (cellW + gap);
+    const y = geo.y + Math.floor(i / cols) * (cellH + gap);
+    if (img.src?.startsWith('data:')) slide.addImage({ x, y, w: cellW, h: cellH, data: img.src, sizing: { type: 'cover', w: cellW, h: cellH } });
+    else if (img.src) slide.addImage({ x, y, w: cellW, h: cellH, path: img.src, sizing: { type: 'cover', w: cellW, h: cellH } });
+  });
+}
+
+function addMathBlock(slide: any, block: MathBlock, geo: any) {
+  slide.addText(block.latex, { ...geo, fontFace: 'Cambria Math', fontSize: (block.fontSize ?? (block.display ? 34 : 24)) * 0.75, color: stripHash(block.color ?? '#0F172A'), align: block.display ? 'center' : 'left', valign: 'middle' });
+}
+
+function addAudioBlock(slide: any, block: AudioBlock, geo: any) {
+  if (block.src?.startsWith('data:')) slide.addMedia({ ...geo, type: 'audio', data: block.src });
+  else if (block.src) slide.addMedia({ ...geo, type: 'audio', path: block.src });
+  slide.addText(block.caption ?? 'Audio', { ...geo, align: 'center', valign: 'middle', color: '64748B', fill: { color: 'F8FAFC' }, line: { color: 'CBD5E1' } });
+}
+
+function addBadgeBlock(slide: any, block: BadgeBlock, geo: any) {
+  const fill = block.variant === 'outline' ? 'FFFFFF' : stripHash(block.color ?? '#EEF2FF');
+  const line = stripHash(block.color ?? '#4F46E5');
+  slide.addShape('roundRect', { ...geo, fill: { color: fill }, line: { color: line, width: block.variant === 'solid' ? 0 : 1 } });
+  slide.addText(block.text, { ...geo, align: 'center', valign: 'middle', bold: true, fontSize: 11, color: stripHash(block.textColor ?? (block.variant === 'solid' ? '#FFFFFF' : block.color ?? '#4F46E5')) });
+}
+
+function addInkBlock(slide: any, block: InkBlock, sx: number, sy: number) {
+  for (const stroke of block.strokes) {
+    const pts = stroke.points;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const x = (block.x + Math.min(a.x, b.x)) * sx;
+      const y = (block.y + Math.min(a.y, b.y)) * sy;
+      const w = Math.max(0.01, Math.abs(b.x - a.x) * sx);
+      const h = Math.max(0.01, Math.abs(b.y - a.y) * sy);
+      slide.addShape('line', { x, y, w, h, flipH: b.x < a.x, flipV: b.y < a.y, line: { color: stripHash(stroke.color), width: stroke.width * 0.4 } });
+    }
+  }
 }
 
 function stripHash(c: string): string {
