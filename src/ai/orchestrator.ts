@@ -11,6 +11,7 @@ import { derivePalette, suggestFontPair } from '../themes/colorIntelligence';
 import { loadSkill, parseSlash } from '../skills';
 import { buildLayout, LAYOUT_REGISTRY } from '../generation/layouts';
 import { validateSlide } from '../generation/validator';
+import { getAvailableFonts } from '../utils/fontDetector';
 import { captureSnapshot } from '../core/persistence/snapshots';
 import { DECK_SIZE } from '../core/schema/factory';
 import type { LayoutKey, SlideContent } from '../generation/types';
@@ -102,7 +103,9 @@ When context scope is "selection", focus only on the listed selected blocks unle
 Use the included slide_id and block_id values when calling tools.
 Do not assume unseen slides/blocks exist if they are not present in the context.
 
-- For decorative backgrounds, icons, dividers, lines, and generated SVG visuals, call insert_design_element with exact x/y/w/h plus a layer placement. Use SVG code for generated visuals when possible so the frontend can parse it as an image block.
+- For decorative backgrounds, cards, icons, dividers, lines, callouts, and simple geometric visuals, prefer editable native blocks via insert_design_element kind=shape/line/icon, insert_connector, chart/table tools, and text blocks. Use SVG/image only for photos, complex illustrations, logos, or visuals that cannot be represented with native PowerPoint-editable objects.
+- Use set_slide_background for professional backgrounds, insert_connector for relationships/process flows, distribute_blocks for alignment, style_chart/style_table for data polish, and polish_slide for conservative automatic layout cleanup.
+- Use inspect_slide_visual before or after critique/polish tasks to catch overflow, occlusion, and export-risk issues from rendered slide previews.
 - Use layer.mode="bottom" for background decorations, "middle" for supporting visuals, "top" for foreground accents, or "above"/"below" with targetBlockId when positioning relative to a specific block.
 
 Output should be in the same language as the user.`;
@@ -251,11 +254,198 @@ async function applyTool(name: string, input: any): Promise<string> {
       return doInsertChartFromTable(input);
     case 'insert_table_from_table':
       return doInsertTableFromTable(input);
+    case 'set_slide_background':
+      return doSetSlideBackground(input);
+    case 'set_slide_transition':
+      return doSetSlideTransition(input);
+    case 'insert_connector':
+      return doInsertConnector(input);
+    case 'style_chart':
+      return doStyleChart(input);
+    case 'style_table':
+      return doStyleTable(input);
+    case 'distribute_blocks':
+      return doDistributeBlocks(input);
+    case 'polish_slide':
+      return doPolishSlide(input);
+    case 'inspect_slide_visual':
+      return doInspectSlideVisual(input);
     default:
       return `Unknown tool: ${name}`;
   }
 }
 
+
+function doSetSlideBackground(input: any): string {
+  const { slide_id } = input;
+  if (!slide_id) return 'missing slide_id';
+  const store = useDeckStore.getState();
+  const slide = store.deck.slides.find((s) => s.id === slide_id);
+  if (!slide) return `slide ${slide_id} not found`;
+  store.mutate('AI: set slide background', (draft) => {
+    const s = draft.slides.find((x) => x.id === slide_id);
+    if (!s) return;
+    s.background = {
+      color: typeof input.color === 'string' ? input.color : s.background?.color,
+      image: typeof input.image === 'string' ? input.image : s.background?.image,
+      gradient: input.gradient && Array.isArray(input.gradient.stops) ? input.gradient : s.background?.gradient,
+    };
+  });
+  return `background updated for ${slide_id}`;
+}
+
+function doSetSlideTransition(input: any): string {
+  const { slide_id, type } = input;
+  if (!slide_id || !type) return 'missing slide_id or type';
+  if (!['none', 'fade', 'slide', 'zoom'].includes(type)) return 'transition type must be none, fade, slide, or zoom';
+  const store = useDeckStore.getState();
+  if (!store.deck.slides.some((s) => s.id === slide_id)) return `slide ${slide_id} not found`;
+  store.mutate('AI: set slide transition', (draft) => {
+    const s = draft.slides.find((x) => x.id === slide_id);
+    if (s) s.transition = { type, duration: typeof input.duration === 'number' ? input.duration : undefined };
+  });
+  return `transition ${type} applied to ${slide_id}`;
+}
+
+function doInsertConnector(input: any): string {
+  const { slide_id } = input;
+  if (!slide_id) return 'missing slide_id';
+  const store = useDeckStore.getState();
+  const slide = store.deck.slides.find((s) => s.id === slide_id);
+  if (!slide) return `slide ${slide_id} not found`;
+  const from = input.from_block_id ? slide.blocks.find((b) => b.id === input.from_block_id) : undefined;
+  const to = input.to_block_id ? slide.blocks.find((b) => b.id === input.to_block_id) : undefined;
+  const start = from
+    ? { blockId: from.id, edge: input.start?.edge ?? 'right', x: from.x + from.w, y: from.y + from.h / 2 }
+    : { x: Number(input.start?.x ?? 240), y: Number(input.start?.y ?? 300), edge: input.start?.edge };
+  const end = to
+    ? { blockId: to.id, edge: input.end?.edge ?? 'left', x: to.x, y: to.y + to.h / 2 }
+    : { x: Number(input.end?.x ?? 900), y: Number(input.end?.y ?? 300), edge: input.end?.edge };
+  store.addBlock(slide_id, {
+    id: newId('blk'),
+    type: 'connector',
+    z: nextZ(slide),
+    x: Math.min(start.x, end.x),
+    y: Math.min(start.y, end.y),
+    w: Math.abs(end.x - start.x),
+    h: Math.abs(end.y - start.y),
+    kind: input.kind === 'elbow' || input.kind === 'curve' ? input.kind : 'straight',
+    start,
+    end,
+    color: input.color ?? '#64748B',
+    strokeWidth: input.strokeWidth ?? 3,
+    arrowStart: !!input.arrowStart,
+    arrowEnd: input.arrowEnd !== false,
+    strokeDash: input.strokeDash === 'dashed' || input.strokeDash === 'dotted' ? input.strokeDash : 'solid',
+  } as any);
+  return `connector inserted on ${slide_id}`;
+}
+
+function doStyleChart(input: any): string {
+  const { slide_id, block_id } = input;
+  if (!slide_id || !block_id) return 'missing slide_id or block_id';
+  const patch: any = { options: {} };
+  for (const key of ['title', 'subtitle', 'legend', 'dataLabels', 'colors']) {
+    if (input[key] !== undefined) patch.options[key] = input[key];
+  }
+  if (!Object.keys(patch.options).length) return 'no chart style fields provided';
+  useDeckStore.getState().updateBlock(slide_id, block_id, patch as Partial<Block>);
+  return 'chart style applied';
+}
+
+function doStyleTable(input: any): string {
+  const { slide_id, block_id } = input;
+  if (!slide_id || !block_id) return 'missing slide_id or block_id';
+  const patch: any = { style: {} };
+  for (const key of ['headerFill', 'zebraStripe', 'fontSize', 'align']) {
+    if (input[key] !== undefined) patch.style[key] = input[key];
+  }
+  if (!Object.keys(patch.style).length) return 'no table style fields provided';
+  useDeckStore.getState().updateBlock(slide_id, block_id, patch as Partial<Block>);
+  return 'table style applied';
+}
+
+function doDistributeBlocks(input: any): string {
+  const { slide_id, block_ids, mode } = input;
+  if (!slide_id || !Array.isArray(block_ids) || block_ids.length < 2 || !mode) return 'missing slide_id, block_ids, or mode';
+  const store = useDeckStore.getState();
+  store.mutate('AI: distribute blocks', (draft) => {
+    const slide = draft.slides.find((s) => s.id === slide_id);
+    if (!slide) return;
+    const blocks = block_ids.map((id: string) => slide.blocks.find((b) => b.id === id)).filter(Boolean) as Block[];
+    if (blocks.length < 2) return;
+    const minX = Math.min(...blocks.map((b) => b.x));
+    const maxX = Math.max(...blocks.map((b) => b.x + b.w));
+    const minY = Math.min(...blocks.map((b) => b.y));
+    const maxY = Math.max(...blocks.map((b) => b.y + b.h));
+    const avgW = blocks.reduce((sum, b) => sum + b.w, 0) / blocks.length;
+    const avgH = blocks.reduce((sum, b) => sum + b.h, 0) / blocks.length;
+    if (mode === 'align-left') blocks.forEach((b) => { b.x = minX; });
+    else if (mode === 'align-center') blocks.forEach((b) => { b.x = minX + (maxX - minX - b.w) / 2; });
+    else if (mode === 'align-right') blocks.forEach((b) => { b.x = maxX - b.w; });
+    else if (mode === 'align-top') blocks.forEach((b) => { b.y = minY; });
+    else if (mode === 'align-middle') blocks.forEach((b) => { b.y = minY + (maxY - minY - b.h) / 2; });
+    else if (mode === 'align-bottom') blocks.forEach((b) => { b.y = maxY - b.h; });
+    else if (mode === 'equal-width') blocks.forEach((b) => { b.w = avgW; });
+    else if (mode === 'equal-height') blocks.forEach((b) => { b.h = avgH; });
+    else if (mode === 'distribute-horizontal') {
+      blocks.sort((a, b) => a.x - b.x);
+      const totalW = blocks.reduce((sum, b) => sum + b.w, 0);
+      const gap = (maxX - minX - totalW) / Math.max(1, blocks.length - 1);
+      let x = minX;
+      blocks.forEach((b) => { b.x = x; x += b.w + gap; });
+    } else if (mode === 'distribute-vertical') {
+      blocks.sort((a, b) => a.y - b.y);
+      const totalH = blocks.reduce((sum, b) => sum + b.h, 0);
+      const gap = (maxY - minY - totalH) / Math.max(1, blocks.length - 1);
+      let y = minY;
+      blocks.forEach((b) => { b.y = y; y += b.h + gap; });
+    }
+  });
+  return `${block_ids.length} blocks adjusted with ${mode}`;
+}
+
+function doPolishSlide(input: any): string {
+  const { slide_id } = input;
+  if (!slide_id) return 'missing slide_id';
+  const store = useDeckStore.getState();
+  const slide = store.deck.slides.find((s) => s.id === slide_id);
+  if (!slide) return `slide ${slide_id} not found`;
+  store.mutate('AI: polish slide', (draft) => {
+    const s = draft.slides.find((x) => x.id === slide_id);
+    if (!s) return;
+    const margin = input.intensity === 'bold' ? 120 : 96;
+    s.blocks.forEach((b) => {
+      b.x = Math.max(margin, Math.min(draft.meta.width - margin - b.w, b.x));
+      b.y = Math.max(64, Math.min(draft.meta.height - 64 - b.h, b.y));
+      if (b.type === 'text' && b.fontSize && b.fontSize < 18) b.fontSize = 18;
+      if ((b.type === 'shape' || b.type === 'image') && b.opacity === undefined) b.opacity = 1;
+    });
+    if (!s.background?.color) s.background = { ...s.background, color: draft.theme.backgroundColor };
+    const v = validateSlide(s, draft.theme, draft.meta.width, draft.meta.height);
+    s.blocks = v.blocks;
+  });
+  return `slide ${slide_id} polished`;
+}
+
+async function doInspectSlideVisual(input: any): Promise<string> {
+  const { slide_id } = input;
+  if (!slide_id) return 'missing slide_id';
+  if (typeof document === 'undefined') return 'visual inspection requires a browser environment';
+  const store = useDeckStore.getState();
+  const slide = store.deck.slides.find((s) => s.id === slide_id);
+  if (!slide) return `slide ${slide_id} not found`;
+  const { buildSlideVisualPreview } = await import('../generation/visualCheck');
+  const preview = await buildSlideVisualPreview(store.deck, slide, typeof input.maxWidth === 'number' ? input.maxWidth : 960);
+  const issueText = preview.issues.length
+    ? preview.issues.map((i) => `${i.severity}${i.blockId ? `/${i.blockId}` : ''}: ${i.message}`).join('; ')
+    : 'no static visual issues detected';
+  return `visual preview rendered (${preview.blocks.length} blocks, image ${Math.round(preview.pngDataUrl.length / 1024)}KB); ${issueText}`;
+}
+
+function nextZ(slide: Slide): number {
+  return slide.blocks.reduce((max, b) => Math.max(max, b.z ?? 0), 0) + 1;
+}
 
 function doCreateDataTable(input: any): string {
   const id = input.id || `dt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -688,6 +878,17 @@ export async function runChat(opts: {
   }
   const svc = new AIService(cfg, proxyConfig);
   let messages = buildChatHistory(opts.history);
+  if (typeof document !== 'undefined') {
+    try {
+      const fonts = await getAvailableFonts();
+      if (fonts.length) {
+        messages = [
+          { role: 'system', content: `Available local fonts for PPT typography: ${fonts.slice(0, 40).join(', ')}` },
+          ...messages,
+        ];
+      }
+    } catch {}
+  }
 
   // Detect a leading slash-command on the latest user message and inject
   // the matching skill's systemPrompt at the top of the system stack.

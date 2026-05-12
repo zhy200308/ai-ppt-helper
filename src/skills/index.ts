@@ -140,6 +140,14 @@ function slugify(s: string): string {
 
 // Built-in skills shipped with the app — light, focused presets.
 const PPT_OPTIMIZATION_SKILLS: Array<{ name: string; title: string; description: string; systemPrompt: string }> = [
+  ['polish', '页面美化', '把当前页优化为更高级、更有设计感的商务幻灯片', 'Redesign the target slide with stronger visual hierarchy, spacing, alignment, contrast, and tasteful decorative elements. Prefer polish_slide, distribute_blocks, style_block, set_slide_background, insert_design_element, and insert_connector. Preserve the user\'s core meaning and avoid adding text inside images.'],
+  ['exec', '高管汇报', '把内容升级为管理层可快速决策的表达', 'Make the slide executive-ready: conclusion-first title, quantified evidence, clear risk/opportunity/action, and minimal jargon. Prefer rewrite_text and speaker notes.'],
+  ['chart', '图表叙事', '把数据变成有结论、有重点的图表页', 'Turn data into insight-led charts. Always create_data_table before charts/tables, then insert_chart_from_table or style_chart. Add a takeaway headline and highlight one main insight.'],
+  ['storyline', '叙事主线', '重组整份 PPT 的故事线和章节推进', 'Improve the deck narrative arc: context → tension → insight → recommendation → action. Use outline_deck/add_slide/populate_slide only where needed, and ask before broad restructuring.'],
+  ['brand', '品牌统一', '按品牌色、字体、版式统一整份 PPT', 'Harmonize colors, typography, backgrounds, icon style, and spacing across the deck. Use derive_theme or set_theme after asking for confirmation when applying broad changes.'],
+  ['dense', '减密拆页', '把拥挤页面拆分或简化，让信息更清晰', 'Reduce visual density. Keep one message per slide, split overloaded content when necessary, and prefer short parallel bullets. Ask before deleting or splitting content.'],
+  ['speaker', '演讲备注', '生成简洁自然的演讲者备注', 'Create concise speaker notes that explain the slide verbally without duplicating slide text. Keep notes practical for live delivery.'],
+  ['critique', '设计审查', '只审查不修改，指出版式、遮挡、导出和叙事问题', 'Audit the target deck or slide without mutating it unless asked. Check storyline, visual hierarchy, text overflow, occlusion, contrast, chart/table clarity, image text risk, and PPTX export risk.'],
   ['executive-summary', '高管摘要', '把内容压缩成管理层可快速决策的摘要', 'Prioritize strategic implications, decisions, risks, and next actions. Keep slides concise and executive-ready.'],
   ['storyline', '叙事主线优化', '重组整份 PPT 的故事线和章节推进', 'Improve the deck narrative arc: context → tension → insight → recommendation → action. Use add_slide/edit tools only where needed.'],
   ['slide-title-polish', '结论式标题', '把页面标题改为带观点的 assertion headline', 'Rewrite slide titles as concise assertion headlines that state the takeaway, not the topic. Use rewrite_text on title blocks.'],

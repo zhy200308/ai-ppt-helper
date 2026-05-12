@@ -289,7 +289,7 @@ export const TOOL_INSERT_TABLE_FROM_TABLE: ToolSpec = {
 
 export const TOOL_INSERT_DESIGN_ELEMENT: ToolSpec = {
   name: 'insert_design_element',
-  description: 'Insert a precisely positioned design element on a slide: generated SVG image, icon, divider/line, or shape. Always include x/y/w/h and layer placement for fine-grained PPT composition.',
+  description: 'Insert a precisely positioned editable design element on a slide. Prefer kind=shape, line, or icon for PPTX-editable output; use kind=svg only for complex illustrations that cannot be represented with native PowerPoint objects. Always include x/y/w/h and layer placement.',
   parameters: {
     type: 'object',
     properties: {
@@ -306,7 +306,7 @@ export const TOOL_INSERT_DESIGN_ELEMENT: ToolSpec = {
           targetBlockId: { type: 'string', description: 'Required when mode is above/below.' },
         },
       },
-      svg_code: { type: 'string', description: 'Raw <svg>...</svg> markup for kind=svg. Keep scripts/events out.' },
+      svg_code: { type: 'string', description: 'Raw <svg>...</svg> markup for kind=svg. SVG exports to PPTX as an image and is not PowerPoint-editable; keep scripts/events out.' },
       icon_name: { type: 'string', description: 'Lucide icon name for kind=icon.' },
       color: { type: 'string' },
       strokeWidth: { type: 'number' },
@@ -471,6 +471,146 @@ export const TOOL_ASK_USER_CHOICE: ToolSpec = {
   },
 };
 
+export const TOOL_SET_SLIDE_BACKGROUND: ToolSpec = {
+  name: 'set_slide_background',
+  description: 'Set a slide background to a solid color, image, or gradient. Use for professional cover slides, section dividers, and brand-driven decks.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      color: { type: 'string', description: 'Solid background color, e.g. #F8FAFC or rgba(...)' },
+      image: { type: 'string', description: 'Optional data URL or image URL for full-slide background' },
+      gradient: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['linear', 'radial'] },
+          angle: { type: 'number' },
+          stops: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { offset: { type: 'number' }, color: { type: 'string' } },
+              required: ['offset', 'color'],
+            },
+          },
+        },
+      },
+    },
+    required: ['slide_id'],
+  },
+};
+
+export const TOOL_SET_SLIDE_TRANSITION: ToolSpec = {
+  name: 'set_slide_transition',
+  description: 'Set a simple PowerPoint-compatible slide transition. Use sparingly for presentation polish.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      type: { type: 'string', enum: ['none', 'fade', 'slide', 'zoom'] },
+      duration: { type: 'number' },
+    },
+    required: ['slide_id', 'type'],
+  },
+};
+
+export const TOOL_INSERT_CONNECTOR: ToolSpec = {
+  name: 'insert_connector',
+  description: 'Insert a connector line/arrow between two blocks or explicit deck-space points. Use for process flows, architecture diagrams, and relationships.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      kind: { type: 'string', enum: ['straight', 'elbow', 'curve'] },
+      from_block_id: { type: 'string' },
+      to_block_id: { type: 'string' },
+      start: { type: 'object', description: 'Optional endpoint {x,y,edge}' },
+      end: { type: 'object', description: 'Optional endpoint {x,y,edge}' },
+      color: { type: 'string' },
+      strokeWidth: { type: 'number' },
+      arrowStart: { type: 'boolean' },
+      arrowEnd: { type: 'boolean' },
+      strokeDash: { type: 'string', enum: ['solid', 'dashed', 'dotted'] },
+    },
+    required: ['slide_id'],
+  },
+};
+
+export const TOOL_STYLE_CHART: ToolSpec = {
+  name: 'style_chart',
+  description: 'Style a chart block with title, legend, labels, and series colors. Use after insert_chart_from_table to make data slides presentation-grade.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      block_id: { type: 'string' },
+      title: { type: 'string' },
+      subtitle: { type: 'string' },
+      legend: { type: 'string', enum: ['show', 'hide', 'top', 'bottom', 'left', 'right'] },
+      dataLabels: { type: 'boolean' },
+      colors: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['slide_id', 'block_id'],
+  },
+};
+
+export const TOOL_STYLE_TABLE: ToolSpec = {
+  name: 'style_table',
+  description: 'Style a table block with header fill, zebra stripes, text alignment, and font size.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      block_id: { type: 'string' },
+      headerFill: { type: 'string' },
+      zebraStripe: { type: 'boolean' },
+      fontSize: { type: 'number' },
+      align: { type: 'string', enum: ['left', 'center', 'right'] },
+    },
+    required: ['slide_id', 'block_id'],
+  },
+};
+
+export const TOOL_DISTRIBUTE_BLOCKS: ToolSpec = {
+  name: 'distribute_blocks',
+  description: 'Align or evenly distribute multiple blocks. Use for precise professional layouts.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      block_ids: { type: 'array', items: { type: 'string' } },
+      mode: { type: 'string', enum: ['align-left', 'align-center', 'align-right', 'align-top', 'align-middle', 'align-bottom', 'distribute-horizontal', 'distribute-vertical', 'equal-width', 'equal-height'] },
+    },
+    required: ['slide_id', 'block_ids', 'mode'],
+  },
+};
+
+export const TOOL_POLISH_SLIDE: ToolSpec = {
+  name: 'polish_slide',
+  description: 'Apply a conservative automatic visual polish pass to one slide: align to safe margins, balance spacing, improve backgrounds, and ensure readable hierarchy.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      intensity: { type: 'string', enum: ['subtle', 'standard', 'bold'] },
+    },
+    required: ['slide_id'],
+  },
+};
+
+export const TOOL_INSPECT_SLIDE_VISUAL: ToolSpec = {
+  name: 'inspect_slide_visual',
+  description: 'Render a slide preview and run static visual checks for text overflow, occlusion, and layout risks. Use before/after polish or critique tasks.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slide_id: { type: 'string' },
+      maxWidth: { type: 'number', description: 'Optional preview width in pixels, default 960.' },
+    },
+    required: ['slide_id'],
+  },
+};
+
 export const ALL_TOOLS: ToolSpec[] = [
   TOOL_OUTLINE_DECK,
   TOOL_POPULATE_SLIDE,
@@ -491,4 +631,12 @@ export const ALL_TOOLS: ToolSpec[] = [
   TOOL_CREATE_DATA_TABLE,
   TOOL_INSERT_CHART_FROM_TABLE,
   TOOL_INSERT_TABLE_FROM_TABLE,
+  TOOL_SET_SLIDE_BACKGROUND,
+  TOOL_SET_SLIDE_TRANSITION,
+  TOOL_INSERT_CONNECTOR,
+  TOOL_STYLE_CHART,
+  TOOL_STYLE_TABLE,
+  TOOL_DISTRIBUTE_BLOCKS,
+  TOOL_POLISH_SLIDE,
+  TOOL_INSPECT_SLIDE_VISUAL,
 ];

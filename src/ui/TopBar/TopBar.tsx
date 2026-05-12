@@ -120,13 +120,27 @@ export function TopBar({ onToggleSettings, onToggleChat }: Props) {
   };
 
   const handleExportPdf = async () => {
-    const { exportPdf } = await import('../../export/pdf');
-    await exportPdf(useDeckStore.getState().deck);
+    setExporting(true);
+    try {
+      const { exportPdf } = await import('../../export/pdf');
+      await exportPdf(useDeckStore.getState().deck);
+    } finally { setExporting(false); }
   };
 
   const handleExportPng = async () => {
-    const { exportPng } = await import('../../export/png');
-    await exportPng(useDeckStore.getState().deck);
+    setExporting(true);
+    try {
+      const { exportPng } = await import('../../export/png');
+      await exportPng(useDeckStore.getState().deck);
+    } finally { setExporting(false); }
+  };
+
+  const handleExportPreviewZip = async () => {
+    setExporting(true);
+    try {
+      const { exportPreviewZip } = await import('../../export/previewZip');
+      await exportPreviewZip(useDeckStore.getState().deck);
+    } finally { setExporting(false); }
   };
 
   return (
@@ -174,8 +188,9 @@ export function TopBar({ onToggleSettings, onToggleChat }: Props) {
         <button className="btn-sm btn-primary" onClick={handleExportPptx} disabled={exporting}>
           <Download size={14}/> {exporting ? '导出中…' : '导出 PPTX'}
         </button>
-        <button className="btn-sm" onClick={handleExportPdf}>PDF</button>
-        <button className="btn-sm" onClick={handleExportPng}>PNG</button>
+        <button className="btn-sm" onClick={handleExportPdf} disabled={exporting}>PDF</button>
+        <button className="btn-sm" onClick={handleExportPng} disabled={exporting}>PNG</button>
+        <button className="btn-sm" onClick={handleExportPreviewZip} disabled={exporting}>预览ZIP</button>
         <LangSwitcher />
         <button className="icon-btn" onClick={onToggleSettings} title="设置"><SettingsIcon size={14}/></button>
       </div>

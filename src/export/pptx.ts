@@ -8,9 +8,12 @@ import type {
   ProgressBlock, KpiCardBlock, GalleryBlock, MathBlock, AudioBlock, BadgeBlock, InkBlock,
 } from '../core/schema/types';
 import { resolveEndpoint } from '../canvas/connectorAnchor';
+import { resolveChartFromTable, resolveTableFromRef } from '../canvas/dataResolver';
 
 const SLIDE_W_INCH = 13.333; // 16:9 widescreen
 const SLIDE_H_INCH = 7.5;
+const PX_TO_PT = 0.5;
+const PX_TO_INCH = SLIDE_W_INCH / 1920;
 
 export async function exportPptx(deck: Deck): Promise<void> {
   const pptx = new PptxGenJS();
@@ -22,9 +25,15 @@ export async function exportPptx(deck: Deck): Promise<void> {
   const sy = SLIDE_H_INCH / deck.meta.height;
 
   for (const slide of deck.slides) {
+    if (slide.hidden) continue;
     const s = pptx.addSlide();
     if (slide.background?.color) {
       s.background = { color: stripHash(slide.background.color) };
+    } else {
+      s.background = { color: stripHash(deck.theme.backgroundColor ?? '#FFFFFF') };
+    }
+    if (slide.background?.image) {
+      addSlideBackgroundImage(s, slide.background.image);
     }
     if (slide.notes) s.addNotes(slide.notes);
     const sorted = [...slide.blocks].sort((a, b) => a.z - b.z);
@@ -64,7 +73,7 @@ function addBlockToSlide(slide: any, block: Block, sx: number, sy: number, deck:
       slide.addText(block.code, {
         x, y, w, h,
         fontFace: 'Consolas',
-        fontSize: 14,
+        fontSize: pxToPt(28),
         color: block.theme === 'light' ? '0F172A' : 'E2E8F0',
         fill: { color: block.theme === 'light' ? 'F8FAFC' : '0F172A' },
         valign: 'top',
@@ -112,6 +121,12 @@ function addBlockToSlide(slide: any, block: Block, sx: number, sy: number, deck:
   }
 }
 
+function addSlideBackgroundImage(slide: any, src: string) {
+  if (!src) return;
+  const image = src.startsWith('data:') ? { data: src } : { path: src };
+  slide.addImage({ ...image, x: 0, y: 0, w: SLIDE_W_INCH, h: SLIDE_H_INCH, transparency: 0 });
+}
+
 function addListBlock(slide: any, block: ListBlock, geo: any) {
   const text = block.items.map((item) => ({
     text: item.text,
@@ -119,9 +134,9 @@ function addListBlock(slide: any, block: ListBlock, geo: any) {
       bullet: block.ordered
         ? { type: 'number' as const, indent: (item.level || 0) * 20 }
         : { indent: (item.level || 0) * 20 },
-      color: stripHash(block.color ?? '#0F172A'),
-      fontSize: (block.fontSize ?? 28) * 0.75,
-      fontFace: block.fontFamily,
+      ...pptxTextColor(toPptxColor(block.color ?? '#0F172A')),
+      fontSize: pxToPt(block.fontSize ?? 28),
+      fontFace: safeFontFace(block.fontFamily),
     },
   }));
   slide.addText(text, {
@@ -135,8 +150,8 @@ function addDividerBlock(slide: any, block: DividerBlock, geo: any) {
   slide.addShape('line', {
     ...geo,
     line: {
-      color: stripHash(block.color ?? '#CBD5E1'),
-      width: block.thickness ?? 2,
+      ...pptxLineColor(block.color ?? '#CBD5E1'),
+      width: pxToPt(block.thickness ?? 2),
       dashType: block.style === 'dashed' ? 'dash' : block.style === 'dotted' ? 'sysDot' : 'solid',
     },
   });
@@ -171,7 +186,7 @@ function addEmbedBlock(slide: any, block: EmbedBlock, geo: any) {
     line: { color: 'CBD5E1', width: 1, dashType: 'dash' },
     valign: 'middle',
     align: 'center',
-    margin: 12,
+    margin: pxToInch(12),
   });
 }
 
@@ -190,8 +205,8 @@ function addConnectorBlock(slide: any, block: ConnectorBlock, sx: number, sy: nu
     x, y, w, h,
     flipH, flipV,
     line: {
-      color: stripHash(block.color ?? '#475569'),
-      width: block.strokeWidth ?? 2,
+      ...pptxLineColor(block.color ?? '#475569'),
+      width: pxToPt(block.strokeWidth ?? 2),
       dashType: dash,
       beginArrowType: block.arrowStart ? 'triangle' : 'none',
       endArrowType: block.arrowEnd ? 'triangle' : 'none',
@@ -207,9 +222,9 @@ function addTextBlock(slide: any, block: TextBlock, geo: any) {
       italic: r.italic,
       underline: r.underline ? { style: 'sng' } : undefined,
       strike: r.strike,
-      color: stripHash(r.color ?? block.color ?? '#0F172A'),
-      fontSize: (r.fontSize ?? block.fontSize ?? 24) * 0.75, // px → pt
-      fontFace: r.fontFamily ?? block.fontFamily,
+      ...pptxTextColor(toPptxColor(r.color ?? block.color ?? '#0F172A')),
+      fontSize: pxToPt(r.fontSize ?? block.fontSize ?? 24),
+      fontFace: safeFontFace(r.fontFamily ?? block.fontFamily),
       hyperlink: r.link ? { url: r.link } : undefined,
     },
   }));
@@ -217,9 +232,9 @@ function addTextBlock(slide: any, block: TextBlock, geo: any) {
     ...geo,
     align: block.align ?? 'left',
     valign: block.vAlign === 'middle' ? 'middle' : block.vAlign === 'bottom' ? 'bottom' : 'top',
-    fill: block.background ? { color: stripHash(block.background) } : undefined,
+    fill: block.background ? pptxFill(block.background) : undefined,
     rotate: block.rotation ?? 0,
-    margin: block.padding ?? 0,
+    margin: pxToInch(block.padding ?? 0),
   });
 }
 
@@ -227,9 +242,9 @@ function addShapeBlock(slide: any, block: ShapeBlock, geo: any) {
   const shapeType = mapShape(block.shape);
   const opts: any = {
     ...geo,
-    fill: block.gradient ? undefined : { color: stripHash(block.fill ?? '#4F46E5') },
+    fill: pptxFill(resolveShapeFill(block)),
     line: block.stroke
-      ? { color: stripHash(block.stroke), width: block.strokeWidth ?? 1, dashType: block.strokeDash === 'dashed' ? 'dash' : block.strokeDash === 'dotted' ? 'sysDot' : undefined }
+      ? { ...pptxLineColor(block.stroke), width: pxToPt(block.strokeWidth ?? 1), dashType: block.strokeDash === 'dashed' ? 'dash' : block.strokeDash === 'dotted' ? 'sysDot' : undefined }
       : undefined,
     rotate: block.rotation ?? 0,
   };
@@ -249,6 +264,18 @@ function mapShape(s: ShapeBlock['shape']): any {
     case 'arrow': return 'rightArrow';
     case 'star': return 'star5';
     case 'polygon': return 'pentagon';
+    case 'pentagon': return 'pentagon';
+    case 'hexagon': return 'hexagon';
+    case 'octagon': return 'octagon';
+    case 'parallelogram': return 'parallelogram';
+    case 'trapezoid': return 'trapezoid';
+    case 'rhombus': return 'diamond';
+    case 'cloud': return 'cloud';
+    case 'heart': return 'heart';
+    case 'callout': return 'wedgeRoundRectCallout';
+    case 'speech-bubble': return 'wedgeRoundRectCallout';
+    case 'cross': return 'plus';
+    case 'chevron': return 'chevron';
     default: return 'rect';
   }
 }
@@ -263,10 +290,10 @@ function addImageBlock(slide: any, block: ImageBlock, geo: any) {
 }
 
 function addChartBlock(slide: any, block: ChartBlock, geo: any, deck: Deck) {
-  const resolved = resolveChart(block, deck);
+  const resolved = resolveChartFromTable(block, deck);
   const data = resolved.series.map((s) => ({
     name: s.name,
-    labels: resolved.categories ?? s.data.map((_, i) => `${i + 1}`),
+    labels: resolved.categories.length ? resolved.categories : s.data.map((_, i) => `${i + 1}`),
     values: s.data,
   }));
   const chartType =
@@ -283,64 +310,37 @@ function addChartBlock(slide: any, block: ChartBlock, geo: any, deck: Deck) {
 }
 
 function addTableBlock(slide: any, block: TableBlock, geo: any, deck: Deck) {
-  const cells = resolveTable(block, deck);
-  const rows = cells.map((row, ri) => row.map((cell) => ({
+  const resolved = resolveTableFromRef(block, deck);
+  const rows = resolved.cells.map((row, ri) => row.map((cell) => ({
     text: cell,
     options: {
-      bold: (block.headerRow && ri === 0),
-      fill: { color: (block.headerRow && ri === 0) ? 'F1F5F9' : 'FFFFFF' },
+      bold: (resolved.headerRow && ri === 0),
+      fill: { color: (resolved.headerRow && ri === 0) ? 'F1F5F9' : 'FFFFFF' },
     },
   })));
   if (!rows.length) {
     slide.addText('Table data unavailable', { ...geo, color: '64748B', align: 'center', valign: 'middle', fill: { color: 'F8FAFC' }, line: { color: 'CBD5E1' } });
     return;
   }
-  slide.addTable(rows, { ...geo, fontSize: 12, border: { type: 'solid', color: 'CBD5E1', pt: 0.5 } });
-}
-
-function resolveChart(block: ChartBlock, deck: Deck): { series: { name: string; data: number[] }[]; categories?: string[] } {
-  if (!block.dataRef) return { series: block.series, categories: block.categories };
-  const table = deck.dataTables?.[block.dataRef.tableId];
-  if (!table) return { series: block.series, categories: block.categories };
-  const yKeys = block.dataRef.yColumns?.length
-    ? block.dataRef.yColumns
-    : table.columns.filter((c) => c.type === 'number' && c.key !== block.dataRef!.xColumn).map((c) => c.key);
-  return {
-    categories: table.rows.map((r) => String(r[block.dataRef!.xColumn] ?? '')),
-    series: yKeys.map((key) => ({
-      name: table.columns.find((c) => c.key === key)?.label ?? key,
-      data: table.rows.map((r) => Number(r[key] ?? 0)),
-    })),
-  };
-}
-
-function resolveTable(block: TableBlock, deck: Deck): string[][] {
-  if (!block.dataRef) return block.cells;
-  const table = deck.dataTables?.[block.dataRef.tableId];
-  if (!table) return block.cells;
-  const cols = block.dataRef.columns?.length ? block.dataRef.columns : table.columns.map((c) => c.key);
-  return [
-    cols.map((key) => table.columns.find((c) => c.key === key)?.label ?? key),
-    ...table.rows.map((row) => cols.map((key) => String(row[key] ?? ''))),
-  ];
+  slide.addTable(rows, { ...geo, fontSize: pxToPt(24), border: { type: 'solid', color: 'CBD5E1', pt: 0.5 } });
 }
 
 function addProgressBlock(slide: any, block: ProgressBlock, geo: any) {
   const value = Math.max(0, Math.min(1, block.value || 0));
   const barH = Math.min(geo.h, Math.max(0.08, (block.thickness ?? 18) / 144));
   const barY = geo.y + (geo.h - barH) / 2;
-  slide.addShape('roundRect', { x: geo.x, y: barY, w: geo.w, h: barH, fill: { color: stripHash(block.trackColor ?? '#E2E8F0') }, line: { color: stripHash(block.trackColor ?? '#E2E8F0') } });
-  slide.addShape('roundRect', { x: geo.x, y: barY, w: geo.w * value, h: barH, fill: { color: stripHash(block.color ?? '#4F46E5') }, line: { color: stripHash(block.color ?? '#4F46E5') } });
+  slide.addShape('roundRect', { x: geo.x, y: barY, w: geo.w, h: barH, fill: pptxFill(block.trackColor ?? '#E2E8F0'), line: pptxLineColor(block.trackColor ?? '#E2E8F0') });
+  slide.addShape('roundRect', { x: geo.x, y: barY, w: geo.w * value, h: barH, fill: pptxFill(block.color ?? '#4F46E5'), line: pptxLineColor(block.color ?? '#4F46E5') });
   if (block.label || block.showValue) {
-    slide.addText(`${block.label ?? ''}${block.showValue ? ` ${Math.round(value * 100)}%` : ''}`.trim(), { ...geo, y: geo.y, h: Math.max(0.25, geo.h / 3), fontSize: 12, color: stripHash(block.color ?? '#0F172A') });
+    slide.addText(`${block.label ?? ''}${block.showValue ? ` ${Math.round(value * 100)}%` : ''}`.trim(), { ...geo, y: geo.y, h: Math.max(0.25, geo.h / 3), fontSize: pxToPt(24), ...pptxTextColor(toPptxColor(block.color ?? '#0F172A')) });
   }
 }
 
 function addKpiBlock(slide: any, block: KpiCardBlock, geo: any) {
   slide.addShape('roundRect', { ...geo, fill: { color: 'F8FAFC' }, line: { color: 'CBD5E1', width: 1 } });
-  slide.addText(block.value, { x: geo.x + 0.12, y: geo.y + 0.12, w: geo.w - 0.24, h: geo.h * 0.38, bold: true, fontSize: 26, color: stripHash(block.color ?? '#0F172A'), margin: 0 });
-  slide.addText(block.label, { x: geo.x + 0.12, y: geo.y + geo.h * 0.5, w: geo.w - 0.24, h: geo.h * 0.22, fontSize: 12, color: '64748B', margin: 0 });
-  if (block.delta || block.sub) slide.addText([block.delta, block.sub].filter(Boolean).join('  '), { x: geo.x + 0.12, y: geo.y + geo.h * 0.74, w: geo.w - 0.24, h: geo.h * 0.2, fontSize: 10, color: block.deltaTone === 'down' ? 'DC2626' : block.deltaTone === 'up' ? '16A34A' : '64748B', margin: 0 });
+  slide.addText(block.value, { x: geo.x + pxToInch(24), y: geo.y + pxToInch(24), w: geo.w - pxToInch(48), h: geo.h * 0.38, bold: true, fontSize: pxToPt(52), ...pptxTextColor(toPptxColor(block.color ?? '#0F172A')), margin: 0 });
+  slide.addText(block.label, { x: geo.x + pxToInch(24), y: geo.y + geo.h * 0.5, w: geo.w - pxToInch(48), h: geo.h * 0.22, fontSize: pxToPt(24), color: '64748B', margin: 0 });
+  if (block.delta || block.sub) slide.addText([block.delta, block.sub].filter(Boolean).join('  '), { x: geo.x + pxToInch(24), y: geo.y + geo.h * 0.74, w: geo.w - pxToInch(48), h: geo.h * 0.2, fontSize: pxToPt(20), color: block.deltaTone === 'down' ? 'DC2626' : block.deltaTone === 'up' ? '16A34A' : '64748B', margin: 0 });
 }
 
 function addGalleryBlock(slide: any, block: GalleryBlock, geo: any) {
@@ -358,7 +358,7 @@ function addGalleryBlock(slide: any, block: GalleryBlock, geo: any) {
 }
 
 function addMathBlock(slide: any, block: MathBlock, geo: any) {
-  slide.addText(block.latex, { ...geo, fontFace: 'Cambria Math', fontSize: (block.fontSize ?? (block.display ? 34 : 24)) * 0.75, color: stripHash(block.color ?? '#0F172A'), align: block.display ? 'center' : 'left', valign: 'middle' });
+  slide.addText(block.latex, { ...geo, fontFace: safeFontFace('Cambria Math'), fontSize: pxToPt(block.fontSize ?? (block.display ? 34 : 24)), ...pptxTextColor(toPptxColor(block.color ?? '#0F172A')), align: block.display ? 'center' : 'left', valign: 'middle' });
 }
 
 function addAudioBlock(slide: any, block: AudioBlock, geo: any) {
@@ -368,10 +368,10 @@ function addAudioBlock(slide: any, block: AudioBlock, geo: any) {
 }
 
 function addBadgeBlock(slide: any, block: BadgeBlock, geo: any) {
-  const fill = block.variant === 'outline' ? 'FFFFFF' : stripHash(block.color ?? '#EEF2FF');
-  const line = stripHash(block.color ?? '#4F46E5');
-  slide.addShape('roundRect', { ...geo, fill: { color: fill }, line: { color: line, width: block.variant === 'solid' ? 0 : 1 } });
-  slide.addText(block.text, { ...geo, align: 'center', valign: 'middle', bold: true, fontSize: 11, color: stripHash(block.textColor ?? (block.variant === 'solid' ? '#FFFFFF' : block.color ?? '#4F46E5')) });
+  const fill = block.variant === 'outline' ? pptxFill('#FFFFFF') : pptxFill(block.color ?? '#EEF2FF');
+  const line = pptxLineColor(block.color ?? '#4F46E5');
+  slide.addShape('roundRect', { ...geo, fill, line: { ...line, width: block.variant === 'solid' ? 0 : 1 } });
+  slide.addText(block.text, { ...geo, align: 'center', valign: 'middle', bold: true, fontSize: pxToPt(22), ...pptxTextColor(toPptxColor(block.textColor ?? (block.variant === 'solid' ? '#FFFFFF' : block.color ?? '#4F46E5'))) });
 }
 
 function addInkBlock(slide: any, block: InkBlock, sx: number, sy: number) {
@@ -384,15 +384,85 @@ function addInkBlock(slide: any, block: InkBlock, sx: number, sy: number) {
       const y = (block.y + Math.min(a.y, b.y)) * sy;
       const w = Math.max(0.01, Math.abs(b.x - a.x) * sx);
       const h = Math.max(0.01, Math.abs(b.y - a.y) * sy);
-      slide.addShape('line', { x, y, w, h, flipH: b.x < a.x, flipV: b.y < a.y, line: { color: stripHash(stroke.color), width: stroke.width * 0.4 } });
+      slide.addShape('line', { x, y, w, h, flipH: b.x < a.x, flipV: b.y < a.y, line: { ...pptxLineColor(stroke.color), width: pxToPt(stroke.width) } });
     }
   }
 }
 
+function pxToPt(px: number): number {
+  return px * PX_TO_PT;
+}
+
+function pxToInch(px: number): number {
+  return px * PX_TO_INCH;
+}
+
+function toPptxColor(c: string): { color: string; transparency?: number } {
+  if (!c) return { color: '000000' };
+  const value = c.trim();
+  if (value === 'transparent') return { color: 'FFFFFF', transparency: 100 };
+  if (value.startsWith('#')) {
+    const hex = value.slice(1);
+    if (hex.length === 3) return { color: hex.split('').map((x) => x + x).join('').toUpperCase() };
+    if (hex.length === 6) return { color: hex.toUpperCase() };
+    if (hex.length === 8) {
+      const alpha = parseInt(hex.slice(6, 8), 16) / 255;
+      return { color: hex.slice(0, 6).toUpperCase(), transparency: Math.round((1 - alpha) * 100) };
+    }
+  }
+  const rgba = value.match(/^rgba?\(([^)]+)\)$/i);
+  if (rgba) {
+    const parts = rgba[1].split(',').map((p) => p.trim());
+    const [r, g, b] = parts.slice(0, 3).map((p) => clampByte(Number(p)));
+    const alpha = parts[3] === undefined ? 1 : Math.max(0, Math.min(1, Number(parts[3])));
+    return {
+      color: [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase(),
+      transparency: Math.round((1 - alpha) * 100),
+    };
+  }
+  const clean = value.replace(/^#/, '').replace(/[^0-9a-f]/gi, '').slice(0, 6);
+  return { color: clean.length === 6 ? clean.toUpperCase() : '000000' };
+}
+
+function pptxFill(c: string) {
+  const parsed = toPptxColor(c);
+  return parsed.transparency === undefined
+    ? { color: parsed.color }
+    : { color: parsed.color, transparency: parsed.transparency };
+}
+
+function pptxLineColor(c: string) {
+  const parsed = toPptxColor(c);
+  return parsed.transparency === undefined
+    ? { color: parsed.color }
+    : { color: parsed.color, transparency: parsed.transparency };
+}
+
+function pptxTextColor(c: { color: string; transparency?: number }) {
+  return { color: c.color, ...(c.transparency !== undefined ? { transparency: c.transparency } : {}) };
+}
+
+function resolveShapeFill(block: ShapeBlock): string {
+  return block.fill ?? block.gradient?.stops.find((stop) => stop.color)?.color ?? '#4F46E5';
+}
+
+function safeFontFace(fontFamily?: string, fallback = 'Arial'): string {
+  if (!fontFamily) return fallback;
+  const generic = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace']);
+  const candidates = fontFamily
+    .split(',')
+    .map((font) => font.trim().replace(/^['"]|['"]$/g, '').replace(/[\x00-\x1F\x7F<>]/g, ''))
+    .filter(Boolean);
+  return candidates.find((font) => !generic.has(font.toLowerCase())) ?? candidates[0] ?? fallback;
+}
+
 function stripHash(c: string): string {
-  if (!c) return '000000';
-  if (c.startsWith('#')) return c.slice(1);
-  return c;
+  return toPptxColor(c).color;
+}
+
+function clampByte(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(255, Math.round(n)));
 }
 
 function sanitizeFilename(s: string) {

@@ -16,9 +16,15 @@ export async function exportPdf(deck: Deck): Promise<void> {
 
   const helv = await pdf.embedFont(StandardFonts.Helvetica);
 
-  for (let i = 0; i < deck.slides.length; i++) {
-    const slide = deck.slides[i];
-    const png = await renderSlideToPng(slide, deck.meta.width, deck.meta.height, deck.theme);
+  const slides = deck.slides.filter((slide) => !slide.hidden);
+  if (!slides.length) throw new Error('No visible slides to export.');
+
+  for (let i = 0; i < slides.length; i++) {
+    const slide = slides[i];
+    const png = await renderSlideToPng(slide, {
+      sourceWidth: deck.meta.width,
+      sourceHeight: deck.meta.height,
+    }, deck.theme);
     const image = await pdf.embedPng(png);
     const page = pdf.addPage([deck.meta.width, deck.meta.height]);
     page.drawImage(image, { x: 0, y: 0, width: deck.meta.width, height: deck.meta.height });
